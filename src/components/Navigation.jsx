@@ -27,8 +27,11 @@ export default function Navigation() {
    {/* Logo */}
    <a href="/" className="flex items-center min-w-0">
    <img src={logo} alt="Dalsi AI" className="h-8 sm:h-10 w-auto flex-shrink-0" />
-   <span className="ml-2 sm:ml-3 text-sm sm:text-xl font-bold text-white">
-    <span className="hidden md:inline">Dalsi AI & Automations</span>
+   <span className="ml-2 sm:ml-3 text-sm sm:text-base font-bold text-white leading-tight">
+    <span className="hidden md:block">
+     <div>Dalsi AI &</div>
+     <div>Automations</div>
+    </span>
     <span className="inline md:hidden">Dalsi AI</span>
    </span>
    </a>
