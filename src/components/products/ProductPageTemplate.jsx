@@ -237,11 +237,11 @@ export default function ProductPageTemplate({ productData }) {
           </p>
           <Button 
             size="lg" 
-            className={`${colorClass} hover:scale-110 transition-transform duration-300 shadow-lg hover:shadow-2xl animate-bounce-subtle`}
+            className={`${colorClass} !text-white hover:scale-110 transition-transform duration-300 shadow-lg hover:shadow-2xl animate-bounce-subtle`}
             onClick={() => window.location.href = '/experience'}
           >
-            {productData.ctaFinal}
-            <ArrowRight className="ml-2 h-5 w-5" />
+            <span className="text-white">{productData.ctaFinal}</span>
+            <ArrowRight className="ml-2 h-5 w-5 text-white" />
           </Button>
         </div>
       </section>

@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { Button } from './ui/button'
-import { Menu, X } from 'lucide-react'
+import { Menu, X, ChevronDown, User, CreditCard, LogOut } from 'lucide-react'
 import logo from '../assets/DalSiAILogo2.png'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function Navigation() {
  const [isMenuOpen, setIsMenuOpen] = useState(false)
+ const [showUserMenu, setShowUserMenu] = useState(false)
  const isHomePage = window.location.pathname === '/'
  const { user, loading, logout } = useAuth()
 
@@ -176,36 +177,50 @@ export default function Navigation() {
     // Show nothing while loading to prevent flicker
     <div className="w-32 h-9"></div>
     ) : user ? (
-    <div className="flex items-center space-x-3">
-     <span className="text-sm text-muted-foreground hidden lg:block">
-     {user.first_name || user.email}
-     </span>
-     <Button 
-     variant="outline" 
-     size="sm"
-     onClick={logout}
+    <div className="relative">
+     <button
+      className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white transition-all duration-200 shadow-md hover:shadow-lg"
+      onClick={() => setShowUserMenu(!showUserMenu)}
      >
-     Sign Out
-     </Button>
+      <span className="font-medium">Hi, {user.first_name || user.email.split('@')[0]}</span>
+      <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`} />
+     </button>
+     
+     {showUserMenu && (
+      <div className="absolute right-0 mt-2 w-56 bg-background border border-border rounded-lg shadow-xl py-2 z-50">
+       <button
+        className="w-full text-left px-4 py-2.5 hover:bg-primary/10 transition-colors flex items-center space-x-2 text-foreground"
+        onClick={() => { setShowUserMenu(false); window.navigate('/profile'); }}
+       >
+        <User className="h-4 w-4" />
+        <span>My Profile</span>
+       </button>
+       <button
+        className="w-full text-left px-4 py-2.5 hover:bg-primary/10 transition-colors flex items-center space-x-2 text-foreground"
+        onClick={() => { setShowUserMenu(false); window.navigate('/billing'); }}
+       >
+        <CreditCard className="h-4 w-4" />
+        <span>Billing & Subscription</span>
+       </button>
+       <div className="border-t border-border my-1"></div>
+       <button
+        className="w-full text-left px-4 py-2.5 hover:bg-destructive/10 transition-colors flex items-center space-x-2 text-destructive"
+        onClick={() => { setShowUserMenu(false); logout(); }}
+       >
+        <LogOut className="h-4 w-4" />
+        <span>Sign Out</span>
+       </button>
+      </div>
+     )}
     </div>
     ) : (
-    <>
-     <Button 
-     variant="outline" 
+    <Button 
      size="sm"
-     className="bg-black text-white border border-gray-700 hover:bg-gray-800 rounded-lg px-4 py-2"
+     className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white rounded-lg px-6 py-2 shadow-md hover:shadow-lg transition-all duration-200"
      onClick={() => window.showAuth()}
-     >
+    >
      Sign In
-     </Button>
-     <Button 
-     size="sm"
-     className="bg-[#9333EA] hover:bg-[#9333EA]/90 text-white rounded-lg px-4 py-2"
-     onClick={() => window.showAuth()}
-     >
-     Get Started
-     </Button>
-    </>
+    </Button>
     )}
    </div>
    </div>
