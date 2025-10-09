@@ -34,15 +34,15 @@ export default function Navigation() {
    </a>
 
    {/* Desktop Navigation */}
-   <div className="hidden lg:flex items-center space-x-6">
-   <a href="/" className="text-white hover:text-primary transition-colors">
+   <div className="hidden lg:flex items-center space-x-3">
+   <a href="/" className="text-white hover:text-primary transition-colors text-sm">
     Home
    </a>
    
    {/* Dalsi AI Dropdown */}
    <div className="relative group">
-    <button className="text-white hover:text-primary transition-colors flex items-center">
-    Dalsi AI
+    <button className="text-white hover:text-primary transition-colors flex items-center text-sm whitespace-nowrap">
+    DalsiAI
     <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
     </svg>
@@ -75,8 +75,8 @@ export default function Navigation() {
    
    {/* Dalsi AI Vi Dropdown */}
    <div className="relative group">
-    <button className="text-white hover:text-accent transition-colors flex items-center">
-    Dalsi AI Vi
+    <button className="text-white hover:text-accent transition-colors flex items-center text-sm whitespace-nowrap">
+    DalsiAI Vi
     <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
     </svg>
@@ -109,8 +109,8 @@ export default function Navigation() {
    
    {/* Dalsi AI Vd Dropdown */}
    <div className="relative group">
-    <button className="text-white hover:text-purple transition-colors flex items-center">
-    Dalsi AI Vd
+    <button className="text-white hover:text-purple transition-colors flex items-center text-sm whitespace-nowrap">
+    DalsiAI Vd
     <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
     </svg>
@@ -141,27 +141,27 @@ export default function Navigation() {
     </div>
    </div>
    {isHomePage ? (
-    <a href="#healthcare" className="text-white hover:text-primary transition-colors">
+    <a href="#healthcare" className="text-white hover:text-primary transition-colors text-sm">
     Healthcare
     </a>
    ) : (
-    <a href="/#healthcare" className="text-white hover:text-primary transition-colors">
+    <a href="/#healthcare" className="text-white hover:text-primary transition-colors text-sm">
     Healthcare
     </a>
    )}
    {isHomePage ? (
-    <a href="#education" className="text-white hover:text-primary transition-colors">
+    <a href="#education" className="text-white hover:text-primary transition-colors text-sm">
     Education
     </a>
    ) : (
-    <a href="/#education" className="text-white hover:text-primary transition-colors">
+    <a href="/#education" className="text-white hover:text-primary transition-colors text-sm">
     Education
     </a>
    )}
-   <a href="/about" className="text-white hover:text-primary transition-colors">
+   <a href="/about" className="text-white hover:text-primary transition-colors text-sm">
     About
    </a>
-   <a href="/contact" className="text-white hover:text-primary transition-colors">
+   <a href="/contact" className="text-white hover:text-primary transition-colors text-sm">
     Contact
    </a>
    <Button 
