@@ -36,6 +36,20 @@ export const getAvailableModels = (subscription) => {
       description: 'Text-based AI model for healthcare, education, and general AI assistance',
       free: true,
       url: DALSIAI_URL
+    },
+    {
+      id: 'dalsi-ai-health',
+      name: 'DalSi AI - Healthcare',
+      description: 'Specialized AI model for clinical, medical, and healthcare-related queries.',
+      free: true,
+      url: DALSIAI_URL // Assuming the same base URL but with a different prompt/persona
+    },
+    {
+      id: 'dalsi-ai-edu',
+      name: 'DalSi AI - Education',
+      description: 'Specialized AI model for academic, curriculum, and educational queries.',
+      free: true,
+      url: DALSIAI_URL // Assuming the same base URL but with a different prompt/persona
     }
   ]
 
@@ -56,7 +70,7 @@ export const getAvailableModels = (subscription) => {
  * Check if user has access to a model
  */
 export const checkModelAccess = async (modelId, usageCount, subscription) => {
-  if (modelId === 'dalsi-ai') {
+  if (modelId === 'dalsi-ai' || modelId === 'dalsi-ai-health' || modelId === 'dalsi-ai-edu') {
     return { hasAccess: true }
   }
 
@@ -77,13 +91,15 @@ export const checkModelAccess = async (modelId, usageCount, subscription) => {
  * Get API URL for a model
  */
 const getModelUrl = (modelId) => {
-  return modelId === 'dalsi-aivi' ? DALSIAIVI_URL : DALSIAI_URL
+  // All text-based models currently use the same base URL, but we can differentiate the prompt later
+  if (modelId === 'dalsi-aivi') return DALSIAIVI_URL
+  return DALSIAI_URL
 }
 
 /**
  * Health check for API
  */
-export const healthCheck = async (modelId) => {
+export const checkAPIHealth = async (modelId) => {
   try {
     // Try new API first if API key is available
     if (currentApiKey) {
@@ -141,9 +157,17 @@ export const preprocessMessage = (message, messageHistory, modelId) => {
     return message
   }
 
+  // Determine system prompt based on modelId
+  let systemPrompt = "You are a helpful and professional AI assistant. Your responses should be clear, concise, and accurate."
+  if (modelId === 'dalsi-ai-health') {
+    systemPrompt = "You are a specialized AI assistant for healthcare. Provide information based on clinical and medical knowledge. Always advise the user to consult a professional for medical advice."
+  } else if (modelId === 'dalsi-ai-edu') {
+    systemPrompt = "You are a specialized AI assistant for education. Provide information based on academic and curriculum knowledge. Structure your responses for clarity and learning."
+  }
+
   // Build conversation context from recent messages
   // Format: "User: message\nAI: response\nUser: message\n..."
-  const contextLines = []
+  const contextLines = [`System: ${systemPrompt}`]
   
   for (const msg of messageHistory) {
     if (msg.sender === 'user') {
@@ -310,14 +334,16 @@ export const streamGenerateText = async (
               // Clean UTF-8 replacement characters before displaying
               const cleanResponse = fullResponse.replace(/\uFFFD/g, '').trim()
               onToken(cleanResponse)
-              if (!hasCalledComplete) {
-                hasCalledComplete = true
-                if (cleanResponse !== fullResponse) {
-                  console.log('🧹 Removed UTF-8 replacement character from response')
-                }
-                onComplete(cleanResponse)
-              }
-              return
+	              if (!hasCalledComplete) {
+	                hasCalledComplete = true
+	                if (cleanResponse !== fullResponse) {
+	                  console.log('🧹 Removed UTF-8 replacement character from response')
+	                }
+	                // Assuming the full response format might contain a 'sources' field
+	                const sources = data.sources || []
+	                onComplete(cleanResponse, sources)
+	              }
+	              return
             }
             
             // Handle "token" format (streaming tokens)
@@ -330,16 +356,18 @@ export const streamGenerateText = async (
             
             // Handle completion
             if (data.done) {
-              if (!hasCalledComplete) {
-                hasCalledComplete = true
-                // Final cleanup
-                const cleanResponse = fullResponse.replace(/\uFFFD/g, '').trim()
-                if (cleanResponse !== fullResponse) {
-                  console.log('🧹 Removed UTF-8 replacement character from final response')
-                }
-                onComplete(cleanResponse)
-              }
-              return
+	              if (!hasCalledComplete) {
+	                hasCalledComplete = true
+	                // Final cleanup
+	                const cleanResponse = fullResponse.replace(/\uFFFD/g, '').trim()
+	                if (cleanResponse !== fullResponse) {
+	                  console.log('🧹 Removed UTF-8 replacement character from final response')
+	                }
+	                // Assuming the final 'done' message might contain a 'sources' field
+	                const sources = data.sources || []
+	                onComplete(cleanResponse, sources)
+	              }
+	              return
             }
             
             // Handle error
@@ -378,12 +406,14 @@ export const streamGenerateText = async (
               // Try to extract done field
               const doneMatch = jsonData.match(/"done"\s*:\s*(true|false)/)
               if (doneMatch && doneMatch[1] === 'true') {
-                if (!hasCalledComplete) {
-                  hasCalledComplete = true
-                  const cleanResponse = fullResponse.replace(/\uFFFD/g, '').trim()
-                  onComplete(cleanResponse)
-                }
-                return
+	                if (!hasCalledComplete) {
+	                  hasCalledComplete = true
+	                  const cleanResponse = fullResponse.replace(/\uFFFD/g, '').trim()
+	                  // Assuming the final 'done' message might contain a 'sources' field
+	                  const sources = doneMatch.sources || []
+	                  onComplete(cleanResponse, sources)
+	                }
+	                return
               }
               
               // Try to extract error field
@@ -417,12 +447,12 @@ export const streamGenerateText = async (
     // If we exit the loop without getting a "done" signal, complete anyway
     if (fullResponse && !hasCalledComplete) {
       hasCalledComplete = true
-      // Clean up any UTF-8 replacement characters (�) that might have been added
-      const cleanResponse = fullResponse.replace(/\uFFFD/g, '').trim()
-      console.log('🧹 Cleaned response, removed', fullResponse.length - cleanResponse.length, 'replacement characters')
-      onComplete(cleanResponse)
-    } else if (!fullResponse) {
-      throw new Error('Stream ended without response')
+	      // Clean up any UTF-8 replacement characters () that might have been added
+	      const cleanResponse = fullResponse.replace(/\uFFFD/g, '').trim()
+	      console.log('🧹 Cleaned response, removed', fullResponse.length - cleanResponse.length, 'replacement characters')
+	      // No sources available in this fallback path
+	      onComplete(cleanResponse, [])
+	    } else if (!fullResponse) {   throw new Error('Stream ended without response')
     }
 
   } catch (error) {

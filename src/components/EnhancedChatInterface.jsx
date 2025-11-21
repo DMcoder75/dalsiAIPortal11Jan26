@@ -37,6 +37,7 @@ import { supabase } from '../lib/supabase'
 import * as dalsiAPI from '../lib/dalsiAPI'
 import { useAuth } from '../contexts/AuthContext'
 import { ChatOptionsMenu } from './ChatOptionsMenu'
+const textEncoder = new TextEncoder()
 import ExperienceNav from './ExperienceNav'
 import { logChatApiCall, logGuestApiCall, getClientIp } from '../services/apiLogging'
 import { trackFunnelStep } from '../services/analyticsAPI'
@@ -93,7 +94,7 @@ const CodeBlock = ({ code, language = 'javascript' }) => {
 }
 
 // Enhanced message content renderer with professional typography
-const MessageContent = ({ content }) => {
+const MessageContent = ({ content, sources }) => {
  const [copied, setCopied] = useState(false)
 
  const copyFullMessage = () => {
@@ -427,7 +428,7 @@ const EnhancedChatInterface = () => {
  const [streamingMessage, setStreamingMessage] = useState('')
  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false)
  const [isGuestLimitLoading, setIsGuestLimitLoading] = useState(true) // <--- NEW: Loading state
- const [guestUserId, setGuestUserId] = useState(null)
+	 const [guestUserId, setGuestUserId] = useState(null)
  const [clientIp, setClientIp] = useState(null)
  const [guestMessageCount, setGuestMessageCount] = useState(getGuestMessageCount())
  const [frictionModalData, setFrictionModalData] = useState(null)
@@ -469,13 +470,13 @@ const EnhancedChatInterface = () => {
    console.warn('⚠️ Could not fetch client IP')
   }
   
-  // Fetch or create guest user ID for logging
-  if (!user) {
-   console.log('🔍 User not authenticated, initializing guest user...')
-   await initializeGuestUser()
-  } else {
-   console.log('✅ User authenticated:', user.email)
-  }
+	  // Fetch or create guest user ID for logging
+	  if (!user) {
+	   console.log('🔍 User not authenticated, initializing guest user...')
+	   await initializeGuestUser()
+	  } else {
+	   console.log('✅ User authenticated:', user.email)
+	  }
   
   // Track funnel step: guest_created or account_created (if logged in)
   if (user) {
@@ -1136,8 +1137,8 @@ const EnhancedChatInterface = () => {
    fullResponse += token
    setStreamingMessage(fullResponse)
    },
-   // onComplete callback
-   async (finalResponse) => {
+	   // onComplete callback
+	   async (finalResponse, sources = []) => {
    // Prevent multiple completions
    if (hasCompleted) {
     console.log('⚠️ Duplicate completion detected, ignoring')
@@ -1165,12 +1166,13 @@ const EnhancedChatInterface = () => {
      status_code: 200,
      response_time_ms: responseTime,
      tokens_used: Math.ceil(finalResponse.length / 4), // Rough estimate
-     cost_usd: 0,
+     cost_usd: 0, // Placeholder: Cost calculation is complex and usually done server-side
      subscription_tier: userSubscription?.tier || 'free',
      api_key_id: user.api_key_id || null,
      ip_address: clientIp,
-     request_size_bytes: inputMessage.length,
-     response_size_bytes: finalResponse.length,
+     request_size_bytes: textEncoder.encode(enhancedMessage).length, // Use enhanced message size
+     response_size_bytes: textEncoder.encode(finalResponse).length, // Use final response size
+     user_agent: navigator.userAgent,
      metadata: {
       model: selectedModel,
       messageLength: inputMessage.length,
@@ -1178,34 +1180,39 @@ const EnhancedChatInterface = () => {
       sessionId: currentChatId
      }
     })
-   } else if (guestUserId) {
-    // Log guest API call
-    await logGuestApiCall({
-     guest_user_id: guestUserId,
-     endpoint: '/dalsiai/generate',
-     status_code: 200,
-     response_time_ms: responseTime,
-     tokens_used: Math.ceil(finalResponse.length / 4),
-     cost_usd: 0,
-     ip_address: clientIp,
-     request_size_bytes: inputMessage.length,
-     response_size_bytes: finalResponse.length,
-     metadata: {
-      model: selectedModel,
-      messageLength: inputMessage.length,
-      responseLength: finalResponse.length,
-      sessionId: currentChatId
-     }
-    })
-   }
+	   } else if (clientIp) { // Use clientIp as the final check for guest logging
+	    // Log guest API call
+	    await logGuestApiCall({
+	     user_id: null, // Explicitly set to null for unauthenticated guests
+	     guest_session_id: guestUserId, // Pass the session ID for metadata
+	     endpoint: '/dalsiai/generate',
+	     status_code: 200,
+	     response_time_ms: responseTime,
+	     tokens_used: Math.ceil(finalResponse.length / 4),
+	     cost_usd: 0, // Placeholder: Cost calculation is complex and usually done server-side
+	     subscription_tier: 'free', // Guest users are always free tier
+	     ip_address: clientIp,
+	     request_size_bytes: textEncoder.encode(enhancedMessage).length, // Use enhanced message size
+	     response_size_bytes: textEncoder.encode(finalResponse).length, // Use final response size
+	     user_agent: navigator.userAgent,
+	     metadata: {
+	      model: selectedModel,
+	      messageLength: inputMessage.length,
+	      responseLength: finalResponse.length,
+	      sessionId: currentChatId,
+	      guest_session_id: guestUserId // Ensure guest session ID is in metadata
+	     }
+	    })
+	   }
 
-   const aiResponse = {
-    id: Date.now() + 1,
-    sender: 'ai',
-    content: finalResponse,
-    timestamp: new Date().toISOString(),
-    model: selectedModel
-   }
+	   const aiResponse = {
+	    id: Date.now() + 1,
+	    sender: 'ai',
+	    content: finalResponse,
+	    timestamp: new Date().toISOString(),
+	    model: selectedModel,
+	    sources: sources // <--- NEW: Add sources to the message object
+	   }
 
    setMessages(prev => [...prev, aiResponse])
    setStreamingMessage('')
@@ -1216,20 +1223,24 @@ const EnhancedChatInterface = () => {
    // Save AI response if authenticated
    if (user && currentChatId) {
     console.log('💾 Saving AI response to database...')
-    await saveMessage(currentChatId, 'ai', aiResponse.content, {
-    model_used: selectedModel,
-    content_type: 'text',
-    has_code: aiResponse.content.includes('```'),
-    processing_time: Date.now() - userMessage.id
-    })
+	    await saveMessage(currentChatId, 'ai', aiResponse.content, {
+	    model_used: selectedModel,
+	    content_type: 'text',
+	    has_code: aiResponse.content.includes('```'),
+	    processing_time: Date.now() - userMessage.id,
+	    sources: aiResponse.sources // <--- NEW: Save sources to database
+	    })
    } else if (!user) {
     // Save guest AI response to localStorage AND database
     const guestMessages = JSON.parse(localStorage.getItem('guest_messages') || '[]')
     guestMessages.push(aiResponse)
     localStorage.setItem('guest_messages', JSON.stringify(guestMessages))
     
-    // Also save to database temp table
-    await saveGuestMessageToDB(aiResponse)
+	    // Also save to database temp table
+	    await saveGuestMessageToDB(aiResponse)
+	    // Note: Sources are saved within aiResponse object
+	    // Note: Sources are saved within aiResponse object
+	    // Note: Sources are saved within aiResponse object
    }
 
    // Update usage count
@@ -1268,30 +1279,34 @@ const EnhancedChatInterface = () => {
      response_time_ms: responseTime,
      error_message: error.message,
      ip_address: clientIp,
-     request_size_bytes: inputMessage.length,
+     request_size_bytes: textEncoder.encode(enhancedMessage).length, // Use enhanced message size
+     user_agent: navigator.userAgent,
      metadata: {
       model: selectedModel,
       messageLength: inputMessage.length,
       sessionId: currentChatId
      }
     })
-   } else if (guestUserId) {
-    // Log guest error
-    await logGuestApiCall({
-     guest_user_id: guestUserId,
-     endpoint: '/dalsiai/generate',
-     status_code: error.status || 500,
-     response_time_ms: responseTime,
-     error_message: error.message,
-     ip_address: clientIp,
-     request_size_bytes: inputMessage.length,
-     metadata: {
-      model: selectedModel,
-      messageLength: inputMessage.length,
-      sessionId: currentChatId
-     }
-    })
-   }
+	   } else if (clientIp) { // Use clientIp as the final check for guest logging
+	    // Log guest error
+	    await logGuestApiCall({
+	     user_id: null, // Explicitly set to null for unauthenticated guests
+	     guest_session_id: guestUserId, // Pass the session ID for metadata
+	     endpoint: '/dalsiai/generate',
+	     status_code: error.status || 500,
+	     response_time_ms: responseTime,
+	     error_message: error.message,
+	     ip_address: clientIp,
+	     request_size_bytes: textEncoder.encode(enhancedMessage).length, // Use enhanced message size
+	     user_agent: navigator.userAgent,
+	     metadata: {
+	      model: selectedModel,
+	      messageLength: inputMessage.length,
+	      sessionId: currentChatId,
+	      guest_session_id: guestUserId // Ensure guest session ID is in metadata
+	     }
+	    })
+	   }
    
    const errorResponse = {
     id: Date.now() + 1,
@@ -1570,19 +1585,24 @@ const EnhancedChatInterface = () => {
        ? 'bg-red-900/20' 
        : 'bg-purple-900/10'
       } backdrop-blur-sm`}></div>
-      <CardContent className="p-4 relative z-10">
-      <MessageContent content={msg.content} />
-      
-      {/* Placeholder for Source List */}
-      {msg.sender === 'ai' && msg.id !== 'welcome' && (
-       <div className="mt-4 pt-3 border-t border-purple-500/30">
-        <p className="text-xs font-semibold text-purple-300 mb-1">Key Sources:</p>
-        <ul className="list-disc list-inside text-xs text-purple-200 space-y-0.5">
-         <li>Source 1: Placeholder for dynamic source link</li>
-         <li>Source 2: Placeholder for dynamic source link</li>
-        </ul>
-       </div>
-      )}
+	      <CardContent className="p-4 relative z-10">
+	      <MessageContent content={msg.content} sources={msg.sources} />
+	      
+	      {/* Source List Display */}
+	      {msg.sender === 'ai' && msg.id !== 'welcome' && msg.sources && msg.sources.length > 0 && (
+	       <div className="mt-4 pt-3 border-t border-purple-500/30">
+	        <p className="text-xs font-semibold text-purple-300 mb-1">Key Sources:</p>
+	        <ul className="list-disc list-inside text-xs text-purple-200 space-y-0.5">
+	         {msg.sources.map((source, index) => (
+	          <li key={index}>
+	           <a href={source.url} target="_blank" rel="noopener noreferrer" className="hover:text-purple-100 transition-colors">
+	            {source.title || `Source ${index + 1}`}
+	           </a>
+	          </li>
+	         ))}
+	        </ul>
+	       </div>
+	      )}
 
       {msg.sender === 'ai' && msg.id !== 'welcome' && (
        <div className="flex items-center justify-end space-x-2 mt-3 opacity-0 group-hover:opacity-100 transition-all duration-300">

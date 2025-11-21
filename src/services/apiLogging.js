@@ -128,10 +128,9 @@ export const logApiCall = async (logData) => {
     // Record attempt in diagnostics
     loggingDiagnostics.recordAttempt(logData);
 
-    // Validate required fields
-    if (!logData.user_id || !logData.endpoint || !logData.method) {
+    // Validate required fields (endpoint and method are mandatory)
+    if (!logData.endpoint || !logData.method) {
       console.warn('⚠️ Missing required fields for API logging:', {
-        user_id: logData.user_id,
         endpoint: logData.endpoint,
         method: logData.method
       });
@@ -146,24 +145,27 @@ export const logApiCall = async (logData) => {
 
     // Prepare the log record - using api_usage_logs table schema
     const record = {
-      user_id: logData.user_id,
+      // The user_id should be a UUID (for logged-in or the Guest user) or null.
+      // The check for 'guest_' is no longer needed here as the component now passes the UUID for the Guest user.
+      user_id: logData.user_id || null,
       endpoint: logData.endpoint,
       method: logData.method,
       status_code: logData.status_code || 200,
       response_time_ms: logData.response_time_ms || 0,
+      request_size_bytes: logData.request_size_bytes || 0,
+      response_size_bytes: logData.response_size_bytes || 0,
+      ip_address: logData.ip_address || null,
+      api_key_id: logData.api_key_id || null,
       tokens_used: logData.tokens_used || 0,
       cost_usd: logData.cost_usd || 0,
       subscription_tier: logData.subscription_tier || 'free',
-      api_key_id: logData.api_key_id || null,
-      ip_address: logData.ip_address || null,
-      user_agent: logData.user_agent || navigator.userAgent,
       error_message: logData.error_message || null,
-      request_size_bytes: logData.request_size_bytes || 0,
-      response_size_bytes: logData.response_size_bytes || 0,
-      request_metadata: logData.request_metadata || {},
+      request_metadata: {
+        ...logData.request_metadata
+      },
+      user_agent: logData.user_agent || navigator.userAgent,
       rate_limit_remaining: logData.rate_limit_remaining || null,
       rate_limit_reset: logData.rate_limit_reset || null,
-      created_at: new Date().toISOString()
     };
 
     console.log('📝 Logging API call:', {
@@ -178,8 +180,7 @@ export const logApiCall = async (logData) => {
     // Insert into database
     const { data, error } = await supabase
       .from('api_usage_logs')
-      .insert([record])
-      .select();
+      .insert([record]);
 
     if (error) {
       console.error('❌ Error logging API call:', error);
@@ -276,7 +277,7 @@ export const logChatApiCall = async (chatData) => {
  * Uses the guest user ID and captures IP address
  * 
  * @param {Object} guestData - Guest call data
- * @param {string} guestData.guest_user_id - Guest user ID from database
+ * @param {string} guestData.user_id - Guest user UUID from the public.users table
  * @param {string} guestData.endpoint - API endpoint
  * @param {number} guestData.response_time_ms - Response time in ms
  * @param {number} guestData.status_code - HTTP status code
@@ -290,8 +291,14 @@ export const logChatApiCall = async (chatData) => {
  * @returns {Promise<Object>} - The inserted log record
  */
 export const logGuestApiCall = async (guestData) => {
+  // Ensure IP address is present as the distinguishing factor
+  if (!guestData.ip_address) {
+    console.error('❌ Cannot log guest API call: IP address is missing.')
+    return null
+  }
+
   return logChatApiCall({
-    user_id: guestData.guest_user_id,
+    user_id: null, // Explicitly set to null for unauthenticated guests
     endpoint: guestData.endpoint || '/dalsiai/generate',
     method: 'POST',
     status_code: guestData.status_code || 200,
@@ -301,11 +308,12 @@ export const logGuestApiCall = async (guestData) => {
     subscription_tier: 'free',
     api_key_id: null,
     error_message: guestData.error_message || null,
-    ip_address: guestData.ip_address,
+    ip_address: guestData.ip_address, // Use IP as the distinguishing factor
     request_size_bytes: guestData.request_size_bytes || 0,
     response_size_bytes: guestData.response_size_bytes || 0,
-    metadata: {
+    request_metadata: {
       isGuest: true,
+      guest_session_id: guestData.guest_session_id || null, // Store session ID in metadata
       model: guestData.metadata?.model || 'dalsiai',
       messageLength: guestData.metadata?.messageLength || 0,
       responseLength: guestData.metadata?.responseLength || 0,

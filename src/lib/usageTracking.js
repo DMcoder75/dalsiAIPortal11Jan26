@@ -31,6 +31,7 @@ export const fetchGuestLimit = async () => {
 }
 
 const GUEST_USAGE_KEY = 'dalsi_guest_messages'
+const GUEST_LAST_USED_KEY = 'dalsi_guest_last_used'
 
 const FREE_USER_LIMIT = 4 // Total: 1 guest + 3 after login
 
@@ -46,6 +47,12 @@ export const getGuestMessageCount = () => {
     return 0
   }
 }
+
+
+
+
+
+
 
 /**
  * Increment guest message count
