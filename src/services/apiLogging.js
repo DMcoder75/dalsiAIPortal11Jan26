@@ -8,6 +8,8 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { loggingDiagnostics } from './loggingDiagnostics';
+import { getGuestUserId } from '../lib/guestUser';
+import { getUserApiKey, updateApiKeyUsage } from '../lib/apiKeyManager';
 
 // Ensure diagnostics is available globally
 if (typeof window !== 'undefined') {
@@ -143,6 +145,18 @@ export const logApiCall = async (logData) => {
       return null;
     }
 
+    // Fetch API key for the user if not provided
+    let apiKeyId = logData.api_key_id;
+    if (!apiKeyId && logData.user_id) {
+      const apiKey = await getUserApiKey(logData.user_id);
+      if (apiKey) {
+        apiKeyId = apiKey.id;
+        console.log('✅ API key fetched for user:', apiKey.name);
+      } else {
+        console.warn('⚠️ No API key found for user:', logData.user_id.substring(0, 8) + '...');
+      }
+    }
+
     // Prepare the log record - using api_usage_logs table schema
     const record = {
       // The user_id should be a UUID (for logged-in or the Guest user) or null.
@@ -155,7 +169,7 @@ export const logApiCall = async (logData) => {
       request_size_bytes: logData.request_size_bytes || 0,
       response_size_bytes: logData.response_size_bytes || 0,
       ip_address: logData.ip_address || null,
-      api_key_id: logData.api_key_id || null,
+      api_key_id: apiKeyId || null,
       tokens_used: logData.tokens_used || 0,
       cost_usd: logData.cost_usd || 0,
       subscription_tier: logData.subscription_tier || 'free',
@@ -194,6 +208,16 @@ export const logApiCall = async (logData) => {
     }
 
     console.log('✅ API call logged successfully');
+    
+    // Update API key usage statistics
+    if (apiKeyId) {
+      await updateApiKeyUsage(apiKeyId, {
+        tokens_used: logData.tokens_used || 0,
+        cost_usd: logData.cost_usd || 0,
+        endpoint: logData.endpoint,
+        ip_address: logData.ip_address
+      });
+    }
     
     // Record success in diagnostics
     loggingDiagnostics.recordSuccess({
@@ -291,14 +315,21 @@ export const logChatApiCall = async (chatData) => {
  * @returns {Promise<Object>} - The inserted log record
  */
 export const logGuestApiCall = async (guestData) => {
-  // Ensure IP address is present as the distinguishing factor
+  // Get the guest user ID from the users table
+  const guestUserId = await getGuestUserId();
+  
+  if (!guestUserId) {
+    console.error('❌ Cannot log guest API call: Guest user not found in database');
+    return null;
+  }
+  
+  // Ensure IP address is present for tracking
   if (!guestData.ip_address) {
-    console.error('❌ Cannot log guest API call: IP address is missing.')
-    return null
+    console.warn('⚠️ IP address missing for guest API call, will use null');
   }
 
   return logChatApiCall({
-    user_id: null, // Explicitly set to null for unauthenticated guests
+    user_id: guestUserId, // Use the guest user UUID from users table
     endpoint: guestData.endpoint || '/dalsiai/generate',
     method: 'POST',
     status_code: guestData.status_code || 200,

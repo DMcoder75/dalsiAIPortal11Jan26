@@ -8,6 +8,9 @@ const NEW_API_URL = 'https://api.neodalsi.com'
 const DALSIAI_URL = 'https://dalsiai-106681824395.asia-south2.run.app'
 const DALSIAIVI_URL = 'https://dalsiaivi-service-594985777520.asia-south2.run.app'
 
+import { getJWT } from './jwtAuth'
+import { cleanTextForDisplay, hasProblematicCharacters } from './textCleaner'
+
 // API key for authentication (will be set from user's API key)
 let currentApiKey = null
 
@@ -23,6 +26,29 @@ export const setApiKey = (apiKey) => {
  */
 export const getApiKey = () => {
   return currentApiKey
+}
+
+/**
+ * Get authentication headers
+ * Includes both JWT token (if available) and API key
+ */
+const getAuthHeaders = () => {
+  const headers = {
+    'Content-Type': 'application/json'
+  }
+  
+  // Add JWT token if available
+  const jwtToken = getJWT()
+  if (jwtToken) {
+    headers['Authorization'] = `Bearer ${jwtToken}`
+  }
+  
+  // Add API key if available
+  if (currentApiKey) {
+    headers['X-API-Key'] = currentApiKey
+  }
+  
+  return headers
 }
 
 /**
@@ -106,9 +132,7 @@ export const checkAPIHealth = async (modelId) => {
       try {
         const response = await fetch(`${NEW_API_URL}/dalsiai/health`, {
           method: 'GET',
-          headers: {
-            'X-API-Key': currentApiKey
-          }
+          headers: getAuthHeaders()
         })
         
         if (response.ok) {
@@ -258,14 +282,8 @@ export const streamGenerateText = async (
       payload.image_data_url = imageDataUrl
     }
 
-    // Prepare headers
-    const headers = {
-      'Content-Type': 'application/json',
-    }
-    
-    if (useNewApi && currentApiKey) {
-      headers['X-API-Key'] = currentApiKey
-    }
+    // Prepare headers with JWT and API key
+    const headers = getAuthHeaders()
 
     // Make streaming request with abort signal
     const response = await fetch(endpoint, {
@@ -332,12 +350,12 @@ export const streamGenerateText = async (
               console.log('📦 Received full response format')
               fullResponse = data.response
               // Clean UTF-8 replacement characters before displaying
-              const cleanResponse = fullResponse.replace(/\uFFFD/g, '').trim()
+              const cleanResponse = cleanTextForDisplay(fullResponse)
               onToken(cleanResponse)
 	              if (!hasCalledComplete) {
 	                hasCalledComplete = true
-	                if (cleanResponse !== fullResponse) {
-	                  console.log('🧹 Removed UTF-8 replacement character from response')
+	                if (hasProblematicCharacters(fullResponse)) {
+	                  console.log('🧹 Removed problematic characters from response')
 	                }
 	                // Assuming the full response format might contain a 'sources' field
 	                const sources = data.sources || []
@@ -349,7 +367,7 @@ export const streamGenerateText = async (
             // Handle "token" format (streaming tokens)
             if (data.token) {
               // Clean token before adding to response
-              const cleanToken = data.token.replace(/\uFFFD/g, '')
+              const cleanToken = cleanTextForDisplay(data.token)
               fullResponse += cleanToken
               onToken(cleanToken)
             }
@@ -359,9 +377,9 @@ export const streamGenerateText = async (
 	              if (!hasCalledComplete) {
 	                hasCalledComplete = true
 	                // Final cleanup
-	                const cleanResponse = fullResponse.replace(/\uFFFD/g, '').trim()
-	                if (cleanResponse !== fullResponse) {
-	                  console.log('🧹 Removed UTF-8 replacement character from final response')
+	                const cleanResponse = cleanTextForDisplay(fullResponse)
+	                if (hasProblematicCharacters(fullResponse)) {
+	                  console.log('🧹 Removed problematic characters from final response')
 	                }
 	                // Assuming the final 'done' message might contain a 'sources' field
 	                const sources = data.sources || []
@@ -447,9 +465,11 @@ export const streamGenerateText = async (
     // If we exit the loop without getting a "done" signal, complete anyway
     if (fullResponse && !hasCalledComplete) {
       hasCalledComplete = true
-	      // Clean up any UTF-8 replacement characters () that might have been added
-	      const cleanResponse = fullResponse.replace(/\uFFFD/g, '').trim()
-	      console.log('🧹 Cleaned response, removed', fullResponse.length - cleanResponse.length, 'replacement characters')
+	      // Clean up any problematic characters that might have been added
+	      const cleanResponse = cleanTextForDisplay(fullResponse)
+	      if (hasProblematicCharacters(fullResponse)) {
+	        console.log('🧹 Cleaned response, removed problematic characters')
+	      }
 	      // No sources available in this fallback path
 	      onComplete(cleanResponse, [])
 	    } else if (!fullResponse) {   throw new Error('Stream ended without response')

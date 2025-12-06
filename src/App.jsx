@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import './index.css'
 import './App.css'
 import { AuthProvider } from './contexts/AuthContext'
+import { AdminAuthProvider } from './contexts/AdminAuthContext'
 
 // Import page components
 import HomePage from './pages/HomePage'
@@ -19,10 +20,22 @@ import Documentation from './pages/Documentation'
 import Community from './pages/Community'
 import Partners from './pages/Partners'
 
+// Import admin components
+import AdminLogin from './pages/admin/AdminLogin'
+import AdminLayout from './components/admin/AdminLayout'
+import AdminDashboard from './pages/admin/AdminDashboard'
+import UserManagement from './pages/admin/UserManagement'
+import ApiKeysManagement from './pages/admin/ApiKeysManagement'
+import Analytics from './pages/admin/Analytics'
+import ApiLogs from './pages/admin/ApiLogs'
+import Subscriptions from './pages/admin/Subscriptions'
+import FrictionManagement from './pages/admin/FrictionManagement'
+
 function App() {
   return (
     <AuthProvider>
-      <Router>
+      <AdminAuthProvider>
+        <Router>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/about" element={<About />} />
@@ -38,8 +51,21 @@ function App() {
           <Route path="/documentation" element={<Documentation />} />
           <Route path="/community" element={<Community />} />
           <Route path="/partners" element={<Partners />} />
+          
+          {/* Admin Routes */}
+          <Route path="/admin/login" element={<AdminLogin />} />
+          <Route path="/admin" element={<AdminLayout />}>
+            <Route path="dashboard" element={<AdminDashboard />} />
+            <Route path="users" element={<UserManagement />} />
+            <Route path="api-keys" element={<ApiKeysManagement />} />
+            <Route path="analytics" element={<Analytics />} />
+            <Route path="logs" element={<ApiLogs />} />
+            <Route path="subscriptions" element={<Subscriptions />} />
+            <Route path="friction" element={<FrictionManagement />} />
+          </Route>
         </Routes>
-      </Router>
+        </Router>
+      </AdminAuthProvider>
     </AuthProvider>
   )
 }

@@ -5,6 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { X, Mail, Lock, User, Eye, EyeOff } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { hashPassword, verifyPassword, createSession } from '../lib/auth'
+import { createPortalUserApiKey } from '../lib/generateApiKey'
+import { loginWithJWT } from '../lib/jwtAuth'
 import { useAuth } from '../contexts/AuthContext'
 import logo from '../assets/DalSiAILogo2.png'
 
@@ -36,69 +38,64 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
 
   const handleLogin = async (e) => {
     e.preventDefault()
+    console.log('🔐 [AUTH_MODAL] handleLogin started')
+    console.log('📧 [AUTH_MODAL] Email:', formData.email)
     setIsLoading(true)
     setError('')
+    console.log('✅ [AUTH_MODAL] Loading state set, error cleared')
 
     try {
-      // Get user from database
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', formData.email)
-        .single()
-
-      if (userError || !userData) {
-        throw new Error('Invalid email or password')
-      }
-
-      // Check if email is verified
-      if (!userData.email_verified) {
-        throw new Error('Please verify your email before logging in. Check your inbox for the verification link.')
-      }
-
-      // Check account status
-      if (userData.status === 'suspended') {
-        throw new Error('Your account has been suspended. Please contact support.')
-      }
-
-      if (userData.status === 'deleted') {
-        throw new Error('This account no longer exists.')
-      }
-
-      // Verify password
-      const isPasswordValid = await verifyPassword(formData.password, userData.password_hash)
+      console.log('🎯 [AUTH_MODAL] Entering try block...')
+      console.log('🔐 [AUTH_MODAL] Attempting JWT login...')
       
-      if (!isPasswordValid) {
-        throw new Error('Invalid email or password')
-      }
-
-      // Create session
-      await createSession(userData.id)
-
-      // Update last login
-      await supabase.from('users').update({
-        last_login: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }).eq('id', userData.id)
-
-      // Update auth context (this will trigger migration)
-      await login(userData)
+      const result = await loginWithJWT(formData.email, formData.password)
+      console.log('📊 [AUTH_MODAL] JWT login result:', result)
       
-      // Close modal
-      if (onSuccess) {
-        onSuccess()
+      if (result.success) {
+        console.log('✅ [AUTH_MODAL] JWT login successful')
+        await login(result.user)
+        
+        if (onSuccess) onSuccess()
+        onClose()
+        
+        setTimeout(() => {
+          window.location.reload()
+        }, 500)
+        return
+      } else {
+        // JWT login failed
+        const errorMsg = result.error || 'Authentication failed'
+        console.error('❌ [AUTH_MODAL] JWT login failed:', errorMsg)
+        throw new Error(errorMsg)
       }
-      onClose()
       
-      // Reload after short delay to allow migration to complete
-      setTimeout(() => {
-        window.location.reload()
-      }, 1500)
     } catch (error) {
-      console.error('Login error:', error)
-      setError(error.message || String(error))
+      console.error('❌❌❌ [AUTH_MODAL] LOGIN ERROR CAUGHT ❌❌❌')
+      console.error('🔴 [AUTH_MODAL] Error type:', error.constructor.name)
+      console.error('🔴 [AUTH_MODAL] Error message:', error.message)
+      console.error('🔴 [AUTH_MODAL] Error stack:', error.stack)
+      console.error('🔴 [AUTH_MODAL] Full error:', error)
+      
+      // Provide user-friendly error messages
+      let userMessage = error.message
+      
+      if (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('Failed to fetch')) {
+        userMessage = 'Something went wrong while fetching data. Please try later.'
+      } else if (error.message.includes('CORS') || error.message.includes('NetworkError')) {
+        userMessage = 'Something went wrong while fetching data. Please try later.'
+      } else if (error.name === 'TypeError' && !error.message) {
+        userMessage = 'Something went wrong while fetching data. Please try later.'
+      } else if (!error.message) {
+        userMessage = 'Login failed. Please check your credentials and try again.'
+      }
+      
+      console.log('🚨 [AUTH_MODAL] Setting error message:', userMessage)
+      setError(userMessage)
+      console.log('✅ [AUTH_MODAL] Error state updated')
     } finally {
+      console.log('🔄 [AUTH_MODAL] Finally block - setting isLoading to false')
       setIsLoading(false)
+      console.log('✅ [AUTH_MODAL] handleLogin completed')
     }
   }
 
@@ -162,6 +159,16 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
       } catch (notifError) {
         console.error('Failed to create notification preferences:', notifError)
         // Continue anyway - not critical
+      }
+
+      // Create API key for portal user with is_internal = true
+      try {
+        console.log('Creating API key for new portal user...')
+        const apiKeyResult = await createPortalUserApiKey(newUser.id, newUser.subscription_tier || 'free')
+        console.log('✅ API key created:', apiKeyResult.key_prefix)
+      } catch (apiKeyError) {
+        console.error('Failed to create API key:', apiKeyError)
+        // Continue anyway - can be created later
       }
 
       // Call Firebase HTTP function to send custom verification email
@@ -335,7 +342,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
             </div>
 
             {error && (
-              <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-lg">
+              <div className="text-sm bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 rounded-lg font-medium" style={{ color: '#EF4444' }}>
                 {error}
               </div>
             )}

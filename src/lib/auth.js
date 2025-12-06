@@ -1,19 +1,52 @@
 import { supabase } from './supabase'
+import bcrypt from 'bcryptjs'
 
-// Hash password using Web Crypto API (browser-compatible)
+/**
+ * Hash password using bcrypt
+ * More secure than SHA-256 with built-in salting
+ * 
+ * @param {string} password - Plain text password
+ * @returns {Promise<string>} - Bcrypt hashed password
+ */
 export const hashPassword = async (password) => {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(password)
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
-  return hashHex
+  try {
+    // Generate salt with cost factor of 10 (good balance of security and performance)
+    const salt = await bcrypt.genSalt(10)
+    
+    // Hash password with salt
+    const hashedPassword = await bcrypt.hash(password, salt)
+    
+    console.log('✅ Password hashed with bcrypt')
+    return hashedPassword
+  } catch (error) {
+    console.error('❌ Error hashing password:', error)
+    throw new Error('Failed to hash password')
+  }
 }
 
-// Verify password
+/**
+ * Verify password against bcrypt hash
+ * 
+ * @param {string} password - Plain text password to verify
+ * @param {string} hashedPassword - Bcrypt hashed password from database
+ * @returns {Promise<boolean>} - True if password matches
+ */
 export const verifyPassword = async (password, hashedPassword) => {
-  const inputHash = await hashPassword(password)
-  return inputHash === hashedPassword
+  try {
+    // Compare password with hash
+    const isMatch = await bcrypt.compare(password, hashedPassword)
+    
+    if (isMatch) {
+      console.log('✅ Password verified successfully')
+    } else {
+      console.log('❌ Password verification failed')
+    }
+    
+    return isMatch
+  } catch (error) {
+    console.error('❌ Error verifying password:', error)
+    return false
+  }
 }
 
 // Generate session token

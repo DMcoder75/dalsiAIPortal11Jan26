@@ -9,6 +9,7 @@ import TermsPage from './TermsPage'
 import PrivacyPage from './PrivacyPage'
 import NewsletterPage from './NewsletterPage'
 import SitemapPage from './SitemapPage'
+import ProfilePage from './ProfilePage'
 import AuthModal from './AuthModal'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -123,6 +124,8 @@ export default function Router() {
         return <DalSiAIViPage />
       
       // Other pages
+      case '/profile':
+        return <ProfilePage />
       case '/about':
         return <AboutPage />
       case '/contact':

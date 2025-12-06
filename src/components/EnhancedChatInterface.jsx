@@ -36,6 +36,7 @@ import {
 import { supabase } from '../lib/supabase'
 import * as dalsiAPI from '../lib/dalsiAPI'
 import { useAuth } from '../contexts/AuthContext'
+import { cleanTextForDB } from '../lib/textCleaner'
 import { ChatOptionsMenu } from './ChatOptionsMenu'
 const textEncoder = new TextEncoder()
 import ExperienceNav from './ExperienceNav'
@@ -48,7 +49,8 @@ import {
  canGuestSendMessage,
  canUserSendMessage,
  getGuestMessageCount,
- fetchGuestLimit // <--- NEW: Import fetch function
+ fetchGuestLimit, // <--- NEW: Import fetch function
+ fetchPlanLimits // <--- NEW: Import plan limits fetcher
 } from '../lib/usageTracking'
 import logo from '../assets/DalSiAILogo2.png'
 import neoDalsiLogo from '../assets/neoDalsiLogo.png'
@@ -402,7 +404,7 @@ const UsageLimitWarning = ({ usageStatus, onUpgrade, onLogin }) => {
 }
 
 const EnhancedChatInterface = () => {
- const { user, authLoading, logout } = useAuth()
+ const { user, authLoading, logout, guestSessionId } = useAuth()
  const [messages, setMessages] = useState([
  {
   id: 'welcome',
@@ -420,6 +422,7 @@ const EnhancedChatInterface = () => {
  const [availableModels, setAvailableModels] = useState([])
  const [userUsageCount, setUserUsageCount] = useState(0)
  const [userSubscription, setUserSubscription] = useState(null)
+ const [planLimits, setPlanLimits] = useState(null)
  const [apiHealthy, setApiHealthy] = useState({ 'dalsi-ai': null, 'dalsi-aivi': null })
  const [selectedImage, setSelectedImage] = useState(null)
  const [imagePreview, setImagePreview] = useState(null)
@@ -433,6 +436,7 @@ const EnhancedChatInterface = () => {
  const [guestMessageCount, setGuestMessageCount] = useState(getGuestMessageCount())
  const [frictionModalData, setFrictionModalData] = useState(null)
  const [isFrictionModalOpen, setIsFrictionModalOpen] = useState(false)
+ const [errorMessage, setErrorMessage] = useState(null) // NEW: Track API errors
 
  const messagesEndRef = useRef(null)
  const fileInputRef = useRef(null)
@@ -496,7 +500,15 @@ const EnhancedChatInterface = () => {
    const guestMessages = JSON.parse(savedGuestMessages)
    if (guestMessages.length > 0) {
     console.log('📥 Loading', guestMessages.length, 'guest messages from localStorage')
-    setMessages(guestMessages)
+    // Clean messages loaded from localStorage
+    const cleanedMessages = guestMessages.map(msg => ({
+     ...msg,
+     content: cleanTextForDB(msg.content || '')
+    }))
+    setMessages(cleanedMessages)
+    // Save cleaned messages back to localStorage
+    localStorage.setItem('guest_messages', JSON.stringify(cleanedMessages))
+    console.log('🧹 Cleaned guest messages from localStorage')
    }
    } catch (error) {
    console.error('Error loading guest messages:', error)
@@ -524,24 +536,41 @@ const EnhancedChatInterface = () => {
 
   console.log('🔍 Checking for guest conversations with session:', sessionId)
 
-  // Check database for guest conversation
+  // First, check localStorage for guest messages
+  let guestMessages = []
+  const savedGuestMessages = localStorage.getItem('guest_messages')
+  if (savedGuestMessages) {
+  try {
+   const parsedMessages = JSON.parse(savedGuestMessages)
+   if (parsedMessages && parsedMessages.length > 0) {
+   console.log('📦 Found', parsedMessages.length, 'guest messages in localStorage')
+   guestMessages = parsedMessages
+   }
+  } catch (error) {
+   console.error('Error parsing guest messages from localStorage:', error)
+  }
+  }
+
+  // If no messages in localStorage, check database
+  if (guestMessages.length === 0) {
   const { data: guestConversation, error: fetchError } = await supabase
-  .from('guest_conversations')
-  .select('*')
-  .eq('session_id', sessionId)
-  .maybeSingle() // Use maybeSingle to avoid 406 errors
+   .from('guest_conversations')
+   .select('*')
+   .eq('session_id', sessionId)
+   .maybeSingle()
 
   if (fetchError) {
-  console.error('Error fetching guest conversation:', fetchError)
-  return
+   console.error('Error fetching guest conversation:', fetchError)
+   return
   }
 
   if (!guestConversation) {
-  console.log('ℹ️ No guest conversation found in database')
-  return
+   console.log('ℹ️ No guest conversation found in database or localStorage')
+   return
   }
 
-  const guestMessages = guestConversation.messages || []
+  guestMessages = guestConversation.messages || []
+  }
   
   if (guestMessages.length === 0) {
   console.log('ℹ️ No messages to migrate')
@@ -577,12 +606,14 @@ const EnhancedChatInterface = () => {
 
   // Save all guest messages to the database
   for (const msg of guestMessages) {
+  // Clean message content before saving
+  const cleanContent = cleanTextForDB(msg.content)
   const { error: msgError } = await supabase
    .from('messages')
    .insert([{
    chat_id: newChat.id,
    sender: msg.sender,
-   content: msg.content,
+   content: cleanContent,
    content_type: 'text',
    metadata: {
     migrated_from_guest: true,
@@ -602,6 +633,10 @@ const EnhancedChatInterface = () => {
   // Set the new chat as current and load messages
   setCurrentChatId(newChat.id)
   setMessages(guestMessages)
+  
+  // Reload chats to show the new chat in sidebar
+  await loadChats()
+  console.log('✅ Chats reloaded, new chat should appear in sidebar')
   
   // Delete guest conversation from database
   const { error: deleteError } = await supabase
@@ -695,6 +730,13 @@ const EnhancedChatInterface = () => {
 
   setUserSubscription(sub)
   console.log('💳 User subscription status:', sub ? sub.plan_type : 'none')
+  
+  // Fetch plan limits based on subscription tier
+  const tierName = sub?.plan_type || user.subscription_tier || 'free'
+  console.log('📊 Fetching plan limits for tier:', tierName)
+  const limits = await fetchPlanLimits(tierName)
+  setPlanLimits(limits)
+  console.log('✅ Plan limits loaded:', limits)
   } catch (error) {
   console.error('❌ Error fetching user usage:', error)
   }
@@ -840,13 +882,15 @@ const EnhancedChatInterface = () => {
  const saveMessage = async (chatId, sender, content, metadata = {}) => {
   console.log('💾 Saving message...')
   try {
+  // Clean content before saving to database
+  const cleanContent = cleanTextForDB(content)
   const { error } = await supabase
    .from('messages')
    .insert([{
    chat_id: chatId,
    user_id: user.id,
    sender,
-   content,
+   content: cleanContent,
    metadata
    }])
 
@@ -866,28 +910,10 @@ const EnhancedChatInterface = () => {
   }
   setGuestUserId(sessionId)
   
-  // Check if guest user exists in DB, if not, create one
-  try {
-  const { data, error } = await supabase
-   .from('guest_users')
-   .select('id')
-   .eq('session_id', sessionId)
-   .maybeSingle()
-   
-  if (error) throw error
-  
-  if (!data) {
-   console.log('➕ Creating new guest user in database...')
-   const { error: insertError } = await supabase
-   .from('guest_users')
-   .insert([{ session_id: sessionId, ip_address: clientIp }])
-   
-   if (insertError) throw insertError
-   console.log('✅ Guest user created in database')
-  }
-  } catch (error) {
-  console.error('❌ Error initializing guest user in DB:', error)
-  }
+  // Guest users don't need a separate guest_users table entry
+  // They use the guest_conversations table for message storage
+  // and will be logged with user_id from the guest user in the users table
+  console.log('✅ Guest user session initialized:', sessionId)
  }
 
  const saveGuestMessageToDB = async (message) => {
@@ -965,6 +991,10 @@ const EnhancedChatInterface = () => {
  }
 
  const handleSendMessage = async () => {
+    console.log('🚀 [SEND_MESSAGE] Starting handleSendMessage...')
+    console.log('👤 [SEND_MESSAGE] User:', user ? user.email : 'Guest')
+    console.log('📝 [SEND_MESSAGE] Input message:', inputMessage.substring(0, 50))
+    
     // New Friction API Check
     const userId = user ? user.id : guestUserId;
     const tier = userSubscription?.tier || 'free';
@@ -1038,7 +1068,7 @@ const EnhancedChatInterface = () => {
   }
  } else {
   // Logged-in user
-  const canSend = canUserSendMessage(userUsageCount, userSubscription)
+  const canSend = canUserSendMessage(userUsageCount, userSubscription, planLimits)
   if (!canSend.canSend) {
   if (canSend.reason === 'limit_reached') {
    handleUpgrade()
@@ -1097,6 +1127,8 @@ const EnhancedChatInterface = () => {
   await saveGuestMessageToDB(userMessage)
  }
 
+ console.log('🎯 [SEND_MESSAGE] Entering try block for API call...')
+ 
  try {
   // Convert image to data URL if present
   let imageDataUrl = null
@@ -1113,6 +1145,10 @@ const EnhancedChatInterface = () => {
   // Create abort controller for this request
   abortControllerRef.current = new AbortController()
   setIsWaitingForResponse(true)
+  
+  console.log('🌐 [SEND_MESSAGE] About to call streamGenerateText API...')
+  console.log('🎯 [SEND_MESSAGE] Selected model:', selectedModel)
+  console.log('🔑 [SEND_MESSAGE] Enhanced message length:', enhancedMessage.length)
   
   // Generate AI response using streaming
   await new Promise((resolve, reject) => {
@@ -1181,9 +1217,8 @@ const EnhancedChatInterface = () => {
      }
     })
 	   } else if (clientIp) { // Use clientIp as the final check for guest logging
-	    // Log guest API call
+	    // Log guest API call (user_id will be fetched from guest user in users table)
 	    await logGuestApiCall({
-	     user_id: null, // Explicitly set to null for unauthenticated guests
 	     guest_session_id: guestUserId, // Pass the session ID for metadata
 	     endpoint: '/dalsiai/generate',
 	     status_code: 200,
@@ -1259,13 +1294,16 @@ const EnhancedChatInterface = () => {
    },
    // onError callback
    async (error) => {
+   console.log('🔴 [ON_ERROR] onError callback triggered!')
    // Prevent multiple error handlers
    if (hasCompleted) {
+    console.log('⚠️ [ON_ERROR] Already completed, ignoring duplicate error')
     return
    }
    hasCompleted = true
    
-   console.error('❌ Error generating AI response:', error)
+   console.error('❌ [ON_ERROR] Error generating AI response:', error)
+   console.error('🔴 [ON_ERROR] Error details:', error.message, error.status)
    
    // Log the error API call
    const responseTime = Date.now() - userMessage.id
@@ -1288,9 +1326,8 @@ const EnhancedChatInterface = () => {
      }
     })
 	   } else if (clientIp) { // Use clientIp as the final check for guest logging
-	    // Log guest error
+	    // Log guest error (user_id will be fetched from guest user in users table)
 	    await logGuestApiCall({
-	     user_id: null, // Explicitly set to null for unauthenticated guests
 	     guest_session_id: guestUserId, // Pass the session ID for metadata
 	     endpoint: '/dalsiai/generate',
 	     status_code: error.status || 500,
@@ -1329,7 +1366,32 @@ const EnhancedChatInterface = () => {
   })
 
  } catch (error) {
-  console.error('Error in message handling:', error)
+  console.error('❌❌❌ [ERROR_CATCH] CAUGHT ERROR IN OUTER CATCH BLOCK ❌❌❌')
+  console.error('🔴 [ERROR_CATCH] Error type:', error.constructor.name)
+  console.error('🔴 [ERROR_CATCH] Error message:', error.message)
+  console.error('🔴 [ERROR_CATCH] Error stack:', error.stack)
+  console.error('🔴 [ERROR_CATCH] Full error object:', error)
+  
+  console.log('🚨 [ERROR_CATCH] Setting error banner message...')
+  // Show error banner to user
+  setErrorMessage('Something went wrong while fetching data. Please try later.')
+  console.log('✅ [ERROR_CATCH] Error message state set!')
+  
+  // Reset loading states
+  console.log('🔄 [ERROR_CATCH] Resetting loading states...')
+  setStreamingMessage('')
+  setIsStreaming(false)
+  setIsLoading(false)
+  setIsWaitingForResponse(false)
+  console.log('✅ [ERROR_CATCH] Loading states reset!')
+  
+  // Auto-dismiss error after 10 seconds
+  console.log('⏰ [ERROR_CATCH] Setting 10-second auto-dismiss timer...')
+  setTimeout(() => {
+   console.log('⏰ [ERROR_CATCH] Auto-dismissing error message...')
+   setErrorMessage(null)
+  }, 10000)
+  console.log('✅ [ERROR_CATCH] Error handling complete!')
  }
  }
 
@@ -1363,7 +1425,7 @@ const EnhancedChatInterface = () => {
  }
 
   // Calculate usage status
-  const usageStatus = getUsageStatus(!user, userUsageCount, userSubscription)
+  const usageStatus = getUsageStatus(!user, userUsageCount, userSubscription, planLimits)
   const showUsageWarning = selectedModel === 'dalsi-ai'
 
   if (isGuestLimitLoading) {
@@ -1696,6 +1758,25 @@ const EnhancedChatInterface = () => {
   </div>
 
   {/* Input Area */}
+  {/* Error Banner */}
+  {errorMessage && (
+   <div className="max-w-4xl mx-auto mb-2">
+    <div className="flex items-center justify-between p-3 bg-red-500/10 rounded-lg border border-red-500/50">
+     <div className="flex items-center space-x-2">
+      <AlertCircle className="h-5 w-5 text-red-500" />
+      <span className="text-sm font-medium text-red-500">{errorMessage}</span>
+     </div>
+     <Button 
+      variant="ghost" 
+      size="sm" 
+      onClick={() => setErrorMessage(null)}
+      className="h-7 w-7 p-0 hover:bg-red-500/20 text-red-500"
+     >
+      <X className="h-4 w-4" />
+     </Button>
+    </div>
+   </div>
+  )}
   {/* Usage Status Banner */}
   {usageStatus.remaining !== Infinity && (
    <div className="max-w-4xl mx-auto">
