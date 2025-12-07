@@ -338,44 +338,57 @@ export default function Navigation() {
     </Button>
     
     {/* Mobile Auth Buttons */}
-    {window.user ? (
+    {!loading && (
+     user ? (
      <div className="space-y-2">
-     <div className="text-sm text-muted-foreground text-center">
-      Welcome, {window.user.user_metadata?.first_name || window.user.email}
+      <div className="text-sm text-muted-foreground text-center mb-2">
+      Welcome, {user.first_name || user.email.split('@')[0]}
+      </div>
+      <button
+      className="w-full text-left px-4 py-2.5 hover:bg-primary/10 transition-colors flex items-center space-x-2 text-foreground rounded-lg"
+      onClick={() => { setIsMenuOpen(false); window.navigate('/profile'); }}
+      >
+      <User className="h-4 w-4" />
+      <span>My Profile</span>
+      </button>
+      <button
+      className="w-full text-left px-4 py-2.5 hover:bg-primary/10 transition-colors flex items-center space-x-2 text-foreground rounded-lg"
+      onClick={() => { setIsMenuOpen(false); window.navigate('/billing'); }}
+      >
+      <CreditCard className="h-4 w-4" />
+      <span>Billing & Subscription</span>
+      </button>
+      <button
+      className="w-full text-left px-4 py-2.5 hover:bg-destructive/10 transition-colors flex items-center space-x-2 text-destructive rounded-lg"
+      onClick={() => { setIsMenuOpen(false); logout(); }}
+      >
+      <LogOut className="h-4 w-4" />
+      <span>Sign Out</span>
+      </button>
      </div>
-     <Button 
+     ) : (
+     <div className="space-y-2">
+      <Button 
       variant="outline"
       className="w-full"
       onClick={() => {
-      window.logout()
-      setIsMenuOpen(false)
+       window.showAuth()
+       setIsMenuOpen(false)
       }}
-     >
-      Sign Out
-     </Button>
-     </div>
-    ) : (
-     <div className="space-y-2">
-     <Button 
-      variant="outline"
-      className="w-full"
-      onClick={() => {
-      window.showAuth()
-      setIsMenuOpen(false)
-      }}
-     >
+      >
       Sign In
-     </Button>
-     <Button 
+      </Button>
+      <Button 
       className="w-full bg-accent hover:bg-accent/90"
       onClick={() => {
-      window.showAuth()
-      setIsMenuOpen(false)
+       window.showAuth()
+       setIsMenuOpen(false)
       }}
-     >
+      >
       Get Started
-     </Button>
+      </Button>
      </div>
+     )
     )}
     </div>
    </div>

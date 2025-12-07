@@ -43,10 +43,14 @@ export function cleanText(text) {
  * @returns {string} - Cleaned text
  */
 export function cleanTextForDisplay(text) {
-  let cleaned = cleanText(text)
+  if (!text || typeof text !== 'string') {
+    return text
+  }
   
-  // Replace multiple spaces with single space
-  cleaned = cleaned.replace(/\s+/g, ' ')
+  let cleaned = text
+  
+  // Only remove UTF-8 replacement character (�) - Unicode U+FFFD
+  cleaned = cleaned.replace(/\uFFFD/g, '')
   
   // Remove trailing dots or special chars that might be artifacts
   cleaned = cleaned.replace(/[�\uFFFD]+$/g, '')

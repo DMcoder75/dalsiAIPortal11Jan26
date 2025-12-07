@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import Navigation from './Navigation'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Card, CardContent, CardHeader } from './ui/card'
@@ -49,8 +50,9 @@ import {
  canGuestSendMessage,
  canUserSendMessage,
  getGuestMessageCount,
- fetchGuestLimit, // <--- NEW: Import fetch function
- fetchPlanLimits // <--- NEW: Import plan limits fetcher
+ fetchGuestLimit,
+ fetchPlanLimits,
+ getGuestLimit
 } from '../lib/usageTracking'
 import logo from '../assets/DalSiAILogo2.png'
 import neoDalsiLogo from '../assets/neoDalsiLogo.png'
@@ -244,7 +246,7 @@ const MessageContent = ({ content, sources }) => {
 }
 
 // Model selector component
-const ModelSelector = ({ selectedModel, onModelChange, availableModels, userUsageCount, userSubscription }) => {
+const ModelSelector = ({ selectedModel, onModelChange, availableModels, userUsageCount, userSubscription, user, guestLimit }) => {
  const [isOpen, setIsOpen] = useState(false)
 
  return (
@@ -275,7 +277,10 @@ const ModelSelector = ({ selectedModel, onModelChange, availableModels, userUsag
    <div className="p-2 space-y-1">
    {availableModels.map((model) => {
     const isSelected = selectedModel === model.id
-    const hasAccess = model.available || (model.id === 'dalsi-ai' && userUsageCount < 2)
+    const isGuest = !user
+    const actualGuestLimit = guestLimit || 5
+    const hasAccess = model.available || (model.id === 'dalsi-ai' && (user || userUsageCount < actualGuestLimit))
+    const remainingUses = isGuest ? (actualGuestLimit - userUsageCount) : null
     
     return (
     <div
@@ -311,14 +316,24 @@ const ModelSelector = ({ selectedModel, onModelChange, availableModels, userUsag
       <p className="text-xs text-muted-foreground mt-1">
        {model.description}
       </p>
-      {model.id === 'dalsi-ai' && userUsageCount < 2 && (
+      {model.id === 'dalsi-ai' && isGuest && remainingUses > 0 && (
        <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-       {2 - userUsageCount} free uses remaining
+       {remainingUses} free use{remainingUses !== 1 ? 's' : ''} remaining
+       </p>
+      )}
+      {model.id === 'dalsi-ai' && user && (
+       <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+       Available for logged-in users
        </p>
       )}
       </div>
      </div>
-     {!hasAccess && (
+     {!hasAccess && !user && (
+      <Button size="sm" variant="outline" className="text-xs" onClick={(e) => { e.stopPropagation(); window.showAuth(); }}>
+      Sign In
+      </Button>
+     )}
+     {!hasAccess && user && model.requiresSubscription && (
       <Button size="sm" variant="outline" className="text-xs">
       Upgrade
       </Button>
@@ -1438,9 +1453,32 @@ const EnhancedChatInterface = () => {
   }
 
   return (
-    <div className="flex h-screen bg-background text-foreground">
-  {/* Sidebar */}
-  <div className={`${sidebarOpen ? 'w-64' : 'w-0'} transition-all duration-300 bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col overflow-hidden`}>
+    <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
+  {/* Navigation - Mobile and Desktop */}
+  <div className="md:hidden">
+    <Navigation />
+  </div>
+  
+  <div className="flex flex-1 overflow-hidden mt-14 md:mt-0">
+  {/* Mobile Sidebar Overlay */}
+  {sidebarOpen && (
+    <div 
+      className="fixed inset-0 bg-black/50 z-40 md:hidden"
+      onClick={() => setSidebarOpen(false)}
+    />
+  )}
+  
+  {/* Sidebar - Desktop Only */}
+  <div className={`
+    hidden md:flex
+    ${sidebarOpen ? 'md:w-64' : 'md:w-0'}
+    md:relative
+    transition-all duration-300
+    bg-sidebar text-sidebar-foreground
+    border-r border-sidebar-border
+    flex-col
+    overflow-hidden
+  `}>
   {/* Sidebar Header */}
   <div className="p-4 border-b border-sidebar-border">
    <div className="flex items-center space-x-3 mb-4 cursor-pointer hover:bg-sidebar-accent/50 rounded-lg p-2 -m-2 transition-colors" onClick={() => window.location.href = '/'}>
@@ -1562,56 +1600,56 @@ const EnhancedChatInterface = () => {
 
   {/* Main Chat Area */}
   <div className="flex-1 flex flex-col">
-  {/* Header */}
-  <div className="flex items-center justify-between p-4 border-b border-border bg-background">
+  {/* Header - Desktop Only */}
+  <div className="hidden md:flex items-center justify-between p-4 border-b border-border bg-background">
    <div className="flex items-center space-x-4">
    <Button
     variant="ghost"
     size="icon"
     onClick={() => setSidebarOpen(!sidebarOpen)}
-    className="md:hidden"
    >
     {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
    </Button>
    
-   {/* Topic-Based Chat Buttons */}
+   {/* Topic-Based Chat Buttons - Desktop */}
    <div className="flex items-center space-x-2">
     <Button 
      variant={selectedModel === 'dalsi-ai' ? 'default' : 'outline'} 
      size="sm" 
      onClick={() => setSelectedModel('dalsi-ai')} 
-     className="text-xs px-3"
+     className="text-xs px-3 whitespace-nowrap"
     >
-     General AI
+     General
     </Button>
     <Button 
      variant={selectedModel === 'dalsi-ai-health' ? 'default' : 'outline'} 
      size="sm" 
      onClick={() => setSelectedModel('dalsi-ai-health')} 
-     className="text-xs px-3"
+     className="text-xs px-3 whitespace-nowrap"
     >
-     Healthcare Chat
+     Healthcare
     </Button>
     <Button 
      variant={selectedModel === 'dalsi-ai-edu' ? 'default' : 'outline'} 
      size="sm" 
      onClick={() => setSelectedModel('dalsi-ai-edu')} 
-     className="text-xs px-3"
+     className="text-xs px-3 whitespace-nowrap"
     >
-     Education Chat
+     Education
     </Button>
    </div>
+   </div>
    
+   <div className="flex items-center space-x-4">
    <ModelSelector
     selectedModel={selectedModel}
     onModelChange={setSelectedModel}
     availableModels={availableModels}
     userUsageCount={userUsageCount}
     userSubscription={userSubscription}
+    user={user}
+    guestLimit={getGuestLimit()}
    />
-   </div>
-   
-   <div className="flex items-center space-x-4">
    <div className={`flex items-center space-x-2 text-sm ${apiHealthy[selectedModel] ? 'text-green-600' : 'text-red-600'}`}>
     <div className={`w-2 h-2 rounded-full ${apiHealthy[selectedModel] ? 'bg-green-600' : 'bg-red-600'}`}></div>
     <span>{apiHealthy[selectedModel] ? 'Online' : apiHealthy[selectedModel] === false ? 'Offline' : ''}</span>
@@ -1623,18 +1661,48 @@ const EnhancedChatInterface = () => {
    </div>
   </div>
 
+  {/* Model Selection - Mobile Only */}
+  <div className="md:hidden p-3 border-b border-border bg-background">
+   <div className="flex items-center space-x-2 overflow-x-auto scrollbar-hide">
+    <Button 
+     variant={selectedModel === 'dalsi-ai' ? 'default' : 'outline'} 
+     size="sm" 
+     onClick={() => setSelectedModel('dalsi-ai')} 
+     className="text-xs px-3 whitespace-nowrap flex-shrink-0"
+    >
+     General
+    </Button>
+    <Button 
+     variant={selectedModel === 'dalsi-ai-health' ? 'default' : 'outline'} 
+     size="sm" 
+     onClick={() => setSelectedModel('dalsi-ai-health')} 
+     className="text-xs px-3 whitespace-nowrap flex-shrink-0"
+    >
+     Healthcare
+    </Button>
+    <Button 
+     variant={selectedModel === 'dalsi-ai-edu' ? 'default' : 'outline'} 
+     size="sm" 
+     onClick={() => setSelectedModel('dalsi-ai-edu')} 
+     className="text-xs px-3 whitespace-nowrap flex-shrink-0"
+    >
+     Education
+    </Button>
+   </div>
+  </div>
+
   {/* // Usage Warning (Removed the old UsageLimitWarning)}
 
   {/* Messages */}
   <div className="flex-1 overflow-y-auto">
-   <div className="max-w-4xl mx-auto p-6 space-y-6">
+   <div className="max-w-4xl mx-auto p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6">
    {messages.map(msg => (
     <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-    <div className={`max-w-3xl ${msg.sender === 'user' ? 'order-2' : 'order-1'}`}>
-     <div className="flex items-start space-x-3">
+    <div className={`max-w-full sm:max-w-2xl md:max-w-3xl ${msg.sender === 'user' ? 'order-2' : 'order-1'}`}>
+     <div className="flex items-start space-x-2 sm:space-x-3">
      {msg.sender === 'ai' && (
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0">
-      <img src={neoDalsiLogo} alt="DalSi AI" className="w-10 h-10 object-contain" />
+      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center flex-shrink-0">
+      <img src={neoDalsiLogo} alt="DalSi AI" className="w-8 h-8 sm:w-10 sm:h-10 object-contain" />
       </div>
      )}
      <Card className={`group relative overflow-hidden backdrop-blur-sm ${
@@ -1647,7 +1715,7 @@ const EnhancedChatInterface = () => {
        ? 'bg-red-900/20' 
        : 'bg-purple-900/10'
       } backdrop-blur-sm`}></div>
-	      <CardContent className="p-4 relative z-10">
+	      <CardContent className="p-3 sm:p-4 relative z-10 text-sm sm:text-base">
 	      <MessageContent content={msg.content} sources={msg.sources} />
 	      
 	      {/* Source List Display */}
@@ -1787,10 +1855,10 @@ const EnhancedChatInterface = () => {
     />
    </div>
   )}
-  <div className="p-4 border-t border-border bg-background">
+  <div className="p-2 sm:p-3 md:p-4 border-t border-border bg-background">
    {/* Image Preview */}
    {imagePreview && (
-   <div className="mb-4 p-3 bg-muted rounded-lg">
+   <div className="mb-2 sm:mb-3 md:mb-4 p-2 sm:p-3 bg-muted rounded-lg">
     <div className="flex items-center justify-between">
     <div className="flex items-center space-x-3">
      <img src={imagePreview} alt="Upload preview" className="w-12 h-12 object-cover rounded" />
@@ -1803,7 +1871,7 @@ const EnhancedChatInterface = () => {
    </div>
    )}
 
-   <div className="flex items-end space-x-3">
+   <div className="flex items-end space-x-2 sm:space-x-3">
 	   <div className="flex-1 relative">
     <Button
      variant="ghost"
@@ -1814,12 +1882,12 @@ const EnhancedChatInterface = () => {
      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>
     </Button>
     <Input
-    placeholder={usageStatus.needsLogin ? `Daily limit of ${usageStatus.limit} messages exhausted. Resets tomorrow.` : (selectedModel === 'dalsi-aivi' ? "Ask anything or upload an image..." : "Ask anything about Healthcare, Education, or AI...")}
+    placeholder={usageStatus.needsLogin ? `Daily limit exhausted` : (selectedModel === 'dalsi-aivi' ? "Ask or upload..." : "Ask anything...")}
     value={inputMessage}
     onChange={(e) => setInputMessage(e.target.value)}
     onKeyPress={handleKeyPress}
     disabled={isLoading || isStreaming || usageStatus.needsLogin || usageStatus.needsSubscription}
-    className="pl-12 pr-12 min-h-[44px] resize-none"
+    className="pl-10 sm:pl-12 pr-10 sm:pr-12 min-h-[44px] sm:min-h-[48px] resize-none text-sm sm:text-base"
     />
     {selectedModel === 'dalsi-aivi' && (
     <Button
@@ -1851,7 +1919,7 @@ const EnhancedChatInterface = () => {
      setStreamingMessage('')
      }
     }}
-    className="h-11 w-11 p-0 flex-shrink-0 bg-red-600 hover:bg-red-700 text-white border border-red-500/30 shadow-lg shadow-red-500/25 hover:shadow-red-500/40 transition-all duration-300 hover:scale-105"
+    className="h-10 w-10 sm:h-11 sm:w-11 p-0 flex-shrink-0 bg-red-600 hover:bg-red-700 text-white border border-red-500/30 shadow-lg shadow-red-500/25 hover:shadow-red-500/40 transition-all duration-300 hover:scale-105"
     >
     <StopCircle className="h-5 w-5" />
     </Button>
@@ -1859,15 +1927,16 @@ const EnhancedChatInterface = () => {
     <Button 
     onClick={handleSendMessage} 
     disabled={(!inputMessage.trim() && !selectedImage) || usageStatus.needsLogin || usageStatus.needsSubscription || isLoading || isStreaming || isWaitingForResponse}
-    className="h-11 w-11 p-0 flex-shrink-0 bg-purple-600 hover:bg-purple-700 text-white border border-purple-500/30 shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 text-white"
+    className="h-10 w-10 sm:h-11 sm:w-11 p-0 flex-shrink-0 bg-purple-600 hover:bg-purple-700 text-white border border-purple-500/30 shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 text-white"
     >
     <Send className="h-5 w-5" />
     </Button>
    )}
    </div>
-   <p className="text-xs text-muted-foreground mt-2 text-center">
+   <p className="text-xs text-muted-foreground mt-2 text-center px-2">
    DalSi AI can make mistakes. Consider checking important information. • Code snippets are syntax highlighted and copyable.
    </p>
+  </div>
   </div>
   </div>
   <FrictionModal 
