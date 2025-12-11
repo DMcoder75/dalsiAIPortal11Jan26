@@ -3,6 +3,12 @@ import './index.css'
 import './App.css'
 import { AuthProvider } from './contexts/AuthContext'
 import { AdminAuthProvider } from './contexts/AdminAuthContext'
+import logger from './lib/logger'
+import DebugPanel from './components/DebugPanel'
+
+// Initialize logger on app start
+logger.info('🚀 Application started at', new Date().toISOString())
+logger.info('📍 Initial URL:', window.location.href)
 
 // Import page components
 import HomePage from './pages/HomePage'
@@ -19,6 +25,8 @@ import SupportCenter from './pages/SupportCenter'
 import Documentation from './pages/Documentation'
 import Community from './pages/Community'
 import Partners from './pages/Partners'
+import SubscriptionSettings from './pages/SubscriptionSettings'
+import GmailCallback from './pages/GmailCallback'
 
 // Import admin components
 import AdminLogin from './pages/admin/AdminLogin'
@@ -36,6 +44,7 @@ function App() {
     <AuthProvider>
       <AdminAuthProvider>
         <Router>
+        <DebugPanel />
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/about" element={<About />} />
@@ -51,6 +60,8 @@ function App() {
           <Route path="/documentation" element={<Documentation />} />
           <Route path="/community" element={<Community />} />
           <Route path="/partners" element={<Partners />} />
+          <Route path="/subscription-settings" element={<SubscriptionSettings />} />
+          <Route path="/auth/gmail/callback" element={<GmailCallback />} />
           
           {/* Admin Routes */}
           <Route path="/admin/login" element={<AdminLogin />} />

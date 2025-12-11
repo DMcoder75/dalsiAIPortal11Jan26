@@ -459,6 +459,16 @@ const EnhancedChatInterface = () => {
 
  useEffect(() => { const initializeChat = async () => {
   console.log('🚀 Starting chat initialization...')
+  console.log('🔍 Current auth state - Loading:', authLoading, 'User:', user ? user.email : 'null')
+  
+  // WAIT for auth loading to complete before proceeding
+  if (authLoading) {
+   console.log('⏳ Auth still loading, waiting for it to complete...')
+   return
+  }
+  
+  console.log('✅ Auth check complete. User:', user ? user.email : 'null')
+  console.log('🔍 User object:', user)
   
   // NEW: Fetch dynamic guest limit and set loading state
   console.log('🌐 Fetching dynamic guest limit...')
@@ -484,7 +494,7 @@ const EnhancedChatInterface = () => {
   console.log('IP fetch result:', ip)
   if (ip) {
    setClientIp(ip)
-   console.log('📍 Client IP captured:', ip)
+   console.log('📋 Client IP captured:', ip)
   } else {
    console.warn('⚠️ Could not fetch client IP')
   }
@@ -533,7 +543,7 @@ const EnhancedChatInterface = () => {
  }
  
  initializeChat()
-}, [user])
+}, [user, authLoading])
 
  const scrollToBottom = () => {
  messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -722,11 +732,29 @@ const EnhancedChatInterface = () => {
   if (!user) return
   console.log('🔄 Fetching user usage data...')
   try {
-  const { data, error } = await supabase
-   .from('messages')
-   .select('id', { count: 'exact' })
+  // First get all chats for the user
+  const { data: userChats, error: chatsError } = await supabase
+   .from('chats')
+   .select('id')
    .eq('user_id', user.id)
-   .eq('sender', 'user')
+
+  if (chatsError) throw chatsError
+
+  // Get all chat IDs
+  const chatIds = userChats.map(chat => chat.id)
+  
+  // Count messages from user in those chats
+  let data = []
+  let error = null
+  if (chatIds.length > 0) {
+    const result = await supabase
+     .from('messages')
+     .select('id', { count: 'exact' })
+     .in('chat_id', chatIds)
+     .eq('sender', 'user')
+    data = result.data
+    error = result.error
+  }
 
   if (error) throw error
 
@@ -797,7 +825,7 @@ const EnhancedChatInterface = () => {
    .from('messages')
    .select('*')
    .eq('chat_id', chatId)
-   .order('created_at', { ascending: true })
+   .order('timestamp', { ascending: true })
 
   if (error) throw error
 
@@ -895,22 +923,52 @@ const EnhancedChatInterface = () => {
  }
 
  const saveMessage = async (chatId, sender, content, metadata = {}) => {
-  console.log('💾 Saving message...')
+  console.log('💾 Saving message...', { chatId, sender, contentLength: content?.length })
   try {
   // Clean content before saving to database
   const cleanContent = cleanTextForDB(content)
-  const { error } = await supabase
+  console.log('🧹 Content cleaned, length:', cleanContent?.length)
+  // Extract context_data and token_count from metadata if available
+  let contextData = null
+  let tokenCount = null
+  
+  if (metadata) {
+    // Extract processing_time as token_count if available
+    if (metadata.processing_time !== undefined && metadata.processing_time !== null) {
+      tokenCount = Math.round(metadata.processing_time)
+      console.log('📊 Token count extracted:', tokenCount)
+    }
+    // Save entire metadata as context_data
+    contextData = metadata
+    console.log('📝 Context data extracted:', contextData)
+  }
+  
+  const messageData = {
+    chat_id: chatId,
+    sender,
+    content: cleanContent,
+    metadata
+  }
+  
+  // Add optional fields only if they have values
+  if (contextData !== null) {
+    messageData.context_data = contextData
+  }
+  if (tokenCount !== null) {
+    messageData.token_count = tokenCount
+  }
+  
+  console.log('📤 About to insert message:', { chatId, sender, contentLength: cleanContent?.length })
+  const { data, error } = await supabase
    .from('messages')
-   .insert([{
-   chat_id: chatId,
-   user_id: user.id,
-   sender,
-   content: cleanContent,
-   metadata
-   }])
+   .insert([messageData])
+   .select()
 
-  if (error) throw error
-  console.log('✅ Message saved successfully')
+  if (error) {
+    console.error('❌ Insert error:', error)
+    throw error
+  }
+  console.log('✅ Message saved successfully', { insertedId: data?.[0]?.id })
   } catch (error) {
   console.error('❌ Error saving message:', error)
   }
@@ -1034,6 +1092,7 @@ const EnhancedChatInterface = () => {
  }
 
  // Auto-create chat if none exists (for logged-in users)
+ let activeChatId = currentChatId // Use current chat ID if it exists
  if (user && !currentChatId) {
   try {
   console.log('🔄 Auto-creating chat for first message...')
@@ -1047,8 +1106,7 @@ const EnhancedChatInterface = () => {
    .insert([{ 
    user_id: user.id, 
    title: chatTitle || 'New Chat',
-   selected_model_id: selectedModel,
-   archived: false
+   model_type: selectedModel
    }])
    .select()
    .single()
@@ -1060,7 +1118,10 @@ const EnhancedChatInterface = () => {
   
   console.log('✅ Chat created successfully:', data.id, 'Title:', chatTitle)
   
-  // Set current chat ID immediately
+  // Store the new chat ID for immediate use (avoids race condition)
+  activeChatId = data.id
+  
+  // Set current chat ID in state (for UI updates)
   setCurrentChatId(data.id)
   
   // Reload chat list to show new chat in sidebar
@@ -1119,8 +1180,10 @@ const EnhancedChatInterface = () => {
  setIsStreaming(false)
 
  // Save user message if authenticated
- if (user && currentChatId) {
-  await saveMessage(currentChatId, 'user', userMessage.content, {
+ console.log('🔍 DEBUG: Checking save condition', { user: !!user, activeChatId, userEmail: user?.email })
+ if (user && activeChatId) {
+  console.log('💾 About to save user message to chat:', activeChatId)
+  await saveMessage(activeChatId, 'user', userMessage.content, {
   has_image: !!currentImage,
   image_name: currentImage?.name
   })
@@ -1255,13 +1318,13 @@ const EnhancedChatInterface = () => {
 	    })
 	   }
 
-	   const aiResponse = {
-	    id: Date.now() + 1,
-	    sender: 'ai',
+  const aiResponse = {
+   id: Date.now() + 1,
+   sender: 'assistant',
 	    content: finalResponse,
 	    timestamp: new Date().toISOString(),
 	    model: selectedModel,
-	    sources: sources // <--- NEW: Add sources to the message object
+	    sources: sources || [] // Ensure sources is always an array
 	   }
 
    setMessages(prev => [...prev, aiResponse])
@@ -1271,15 +1334,15 @@ const EnhancedChatInterface = () => {
    setIsWaitingForResponse(false)
 
    // Save AI response if authenticated
-   if (user && currentChatId) {
+   if (user && activeChatId) {
     console.log('💾 Saving AI response to database...')
-	    await saveMessage(currentChatId, 'ai', aiResponse.content, {
-	    model_used: selectedModel,
-	    content_type: 'text',
-	    has_code: aiResponse.content.includes('```'),
-	    processing_time: Date.now() - userMessage.id,
-	    sources: aiResponse.sources // <--- NEW: Save sources to database
-	    })
+    await saveMessage(activeChatId, 'ai', aiResponse.content, {
+    model_used: selectedModel,
+    content_type: 'text',
+    has_code: aiResponse.content.includes('```'),
+    processing_time: Date.now() - userMessage.id,
+    sources: aiResponse.sources
+    })
    } else if (!user) {
     // Save guest AI response to localStorage AND database
     const guestMessages = JSON.parse(localStorage.getItem('guest_messages') || '[]')
@@ -1719,11 +1782,11 @@ const EnhancedChatInterface = () => {
 	      <MessageContent content={msg.content} sources={msg.sources} />
 	      
 	      {/* Source List Display */}
-	      {msg.sender === 'ai' && msg.id !== 'welcome' && msg.sources && msg.sources.length > 0 && (
-	       <div className="mt-4 pt-3 border-t border-purple-500/30">
-	        <p className="text-xs font-semibold text-purple-300 mb-1">Key Sources:</p>
-	        <ul className="list-disc list-inside text-xs text-purple-200 space-y-0.5">
-	         {msg.sources.map((source, index) => (
+      {msg.sender === 'ai' && msg.id !== 'welcome' && msg.sources && Array.isArray(msg.sources) && msg.sources.length > 0 && (
+       <div className="mt-4 pt-3 border-t border-purple-500/30">
+        <p className="text-xs font-semibold text-purple-300 mb-1">Key Sources:</p>
+        <ul className="list-disc list-inside text-xs text-purple-200 space-y-0.5">
+         {msg.sources.map((source, index) => (
 	          <li key={index}>
 	           <a href={source.url} target="_blank" rel="noopener noreferrer" className="hover:text-purple-100 transition-colors">
 	            {source.title || `Source ${index + 1}`}

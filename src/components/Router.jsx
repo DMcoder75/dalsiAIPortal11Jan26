@@ -11,6 +11,7 @@ import NewsletterPage from './NewsletterPage'
 import SitemapPage from './SitemapPage'
 import ProfilePage from './ProfilePage'
 import AuthModal from './AuthModal'
+import Billing from '../pages/Billing'
 import { useAuth } from '../contexts/AuthContext'
 
 // Model Overview Pages
@@ -126,6 +127,8 @@ export default function Router() {
       // Other pages
       case '/profile':
         return <ProfilePage />
+      case '/billing':
+        return <Billing />
       case '/about':
         return <AboutPage />
       case '/contact':

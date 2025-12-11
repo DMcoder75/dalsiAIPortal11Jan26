@@ -7,7 +7,12 @@
  * - POST /api/auth/login - Login and get JWT token
  * - POST /api/auth/verify - Verify JWT token
  * - POST /api/auth/refresh - Refresh JWT token
+ * - POST /api/auth/gmail/signup - Initiate Gmail OAuth for signup
+ * - POST /api/auth/gmail/login - Initiate Gmail OAuth for login
+ * - POST /api/auth/gmail/callback - Handle Gmail OAuth callback
  */
+
+import logger from './logger'
 
 const API_BASE_URL = 'https://api.neodalsi.com';
 
@@ -31,6 +36,20 @@ export const loginWithJWT = async (email, password) => {
     });
 
     const data = await response.json();
+    
+    // Store debug info to localStorage
+    localStorage.setItem('DEBUG_API_RESPONSE', JSON.stringify({
+      timestamp: new Date().toISOString(),
+      fullResponse: data,
+      userObject: data.user,
+      hasFirstName: !!data.user?.first_name,
+      firstNameValue: data.user?.first_name
+    }));
+    
+    console.log('📥 [JWT_AUTH] Full API response:', data);
+    console.log('📥 [JWT_AUTH] User object from API:', data.user);
+    console.log('📥 [JWT_AUTH] Has first_name:', !!data.user?.first_name);
+    console.log('📥 [JWT_AUTH] First name value:', data.user?.first_name);
 
     if (!response.ok) {
       console.error('❌ Login failed:', data);
@@ -43,8 +62,10 @@ export const loginWithJWT = async (email, password) => {
 
     console.log('✅ Login successful');
     
+    console.log('💾 [JWT_AUTH] Storing user_info:', JSON.stringify(data.user));
     // Store JWT token in localStorage
     localStorage.setItem('jwt_token', data.token);
+    console.log('✅ [JWT_AUTH] Verified stored:', localStorage.getItem('user_info'));
     localStorage.setItem('user_info', JSON.stringify(data.user));
 
     return {
@@ -88,42 +109,28 @@ export const verifyJWT = async (token = null) => {
 
     if (!response.ok) {
       console.error('❌ Token verification failed:', data);
-      
-      // If token is expired or invalid, clear it
-      if (response.status === 401) {
-        clearJWT();
-      }
-      
-      return { valid: false, user: null, error: data.error };
-    }
-
-    if (!data.valid) {
-      console.warn('⚠️ Token is not valid');
-      clearJWT();
       return { valid: false, user: null };
     }
 
-    console.log('✅ Token verified successfully');
-    
-    // Update stored user info
-    if (data.user) {
-      localStorage.setItem('user_info', JSON.stringify(data.user));
+    if (!data.valid) {
+      console.warn('⚠️ Token is invalid');
+      return { valid: false, user: null };
     }
 
+    console.log('✅ Token is valid');
     return {
       valid: true,
-      user: data.user
+      user: data.user || null
     };
 
   } catch (error) {
     console.error('❌ JWT verification error:', error);
-    return { valid: false, user: null, error: error.message };
+    return { valid: false, user: null };
   }
 };
 
 /**
  * Refresh JWT token
- * Gets a new token with extended expiration
  * 
  * @returns {Promise<Object>} - { success, token }
  */
@@ -346,6 +353,179 @@ export const authenticatedFetch = async (url, options = {}) => {
 
   } catch (error) {
     console.error('Authenticated fetch error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Sign up with Gmail (OAuth)
+ * Initiates Gmail OAuth flow for new user signup
+ * 
+ * @returns {Promise<Object>} - { success, redirecting: true }
+ */
+export const signupWithGmail = async () => {
+  try {
+    console.log('🔐 [GMAIL_AUTH] Initiating Gmail signup...');
+    
+    // Get redirect URI from current domain
+    const redirectUri = `${window.location.origin}/auth/gmail/callback`;
+    console.log('📍 Redirect URI:', redirectUri);
+    
+    // Call Gmail signup endpoint
+    const response = await fetch(`${API_BASE_URL}/api/auth/gmail/signup`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        redirect_uri: redirectUri
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('❌ Gmail signup failed:', data);
+      throw new Error(data.error || 'Gmail signup failed');
+    }
+
+    if (!data.success || !data.auth_url) {
+      console.error('❌ Invalid response format:', data);
+      throw new Error('Invalid response from server');
+    }
+
+    console.log('✅ Gmail signup URL generated');
+    console.log('🔄 Redirecting to Google OAuth...');
+    
+    // Redirect to Gmail OAuth consent screen
+    window.location.href = data.auth_url;
+
+    return {
+      success: true,
+      redirecting: true
+    };
+
+  } catch (error) {
+    console.error('❌ Gmail signup error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Login with Gmail (OAuth)
+ * Initiates Gmail OAuth flow for existing user login
+ * 
+ * @returns {Promise<Object>} - { success, redirecting: true }
+ */
+export const loginWithGmail = async () => {
+  try {
+    console.log('🔐 [GMAIL_AUTH] Initiating Gmail login...');
+    
+    // Get redirect URI from current domain
+    const redirectUri = `${window.location.origin}/auth/gmail/callback`;
+    console.log('📍 Redirect URI:', redirectUri);
+    
+    // Call Gmail login endpoint
+    const response = await fetch(`${API_BASE_URL}/api/auth/gmail/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        redirect_uri: redirectUri
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('❌ Gmail login failed:', data);
+      throw new Error(data.error || 'Gmail login failed');
+    }
+
+    if (!data.success || !data.auth_url) {
+      console.error('❌ Invalid response format:', data);
+      throw new Error('Invalid response from server');
+    }
+
+    console.log('✅ Gmail login URL generated');
+    console.log('🔄 Redirecting to Google OAuth...');
+    
+    // Redirect to Gmail OAuth consent screen
+    window.location.href = data.auth_url;
+
+    return {
+      success: true,
+      redirecting: true
+    };
+
+  } catch (error) {
+    console.error('❌ Gmail login error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Handle Gmail OAuth callback
+ * Called after user authorizes Gmail access
+ * Exchanges authorization code for JWT token and user data
+ * 
+ * @param {string} code - Authorization code from Google
+ * @param {string} state - State parameter for CSRF protection
+ * @returns {Promise<Object>} - { success, token, user }
+ */
+export const handleGmailCallback = async (code, state) => {
+  try {
+    console.log('🔐 [GMAIL_AUTH] Handling Gmail callback...');
+    console.log('📝 Code:', code ? 'present' : 'missing');
+    console.log('📝 State:', state ? 'present' : 'missing');
+    
+    // Validate parameters
+    if (!code || !state) {
+      throw new Error('Missing authorization code or state parameter');
+    }
+
+    // Exchange authorization code for JWT token
+    console.log('🔄 Exchanging code for JWT token...');
+    const response = await fetch(`${API_BASE_URL}/api/auth/gmail/callback`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        code,
+        state
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('❌ Gmail callback failed:', data);
+      throw new Error(data.error || 'Gmail authentication failed');
+    }
+
+    if (!data.success || !data.token || !data.user) {
+      console.error('❌ Invalid response format:', data);
+      throw new Error('Invalid response from server');
+    }
+
+    console.log('✅ Gmail authentication successful');
+    console.log('📦 User data:', data.user);
+    console.log('🎁 Subscription tier:', data.user.subscription_tier);
+
+    // Store JWT token and user info
+    localStorage.setItem('jwt_token', data.token);
+    localStorage.setItem('user_info', JSON.stringify(data.user));
+
+    return {
+      success: true,
+      token: data.token,
+      user: data.user
+    };
+
+  } catch (error) {
+    console.error('❌ Gmail callback error:', error);
     throw error;
   }
 };

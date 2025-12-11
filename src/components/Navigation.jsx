@@ -195,7 +195,7 @@ export default function Navigation() {
       className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white transition-all duration-200 shadow-md hover:shadow-lg"
       onClick={() => setShowUserMenu(!showUserMenu)}
      >
-      <span className="font-medium">Hi, {user.first_name || user.email.split('@')[0]}</span>
+      <span className="font-medium">Hi, {user.first_name && user.first_name.trim() ? user.first_name : (user.email ? user.email.split('@')[0] : 'User')}</span>
       <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`} />
      </button>
      
