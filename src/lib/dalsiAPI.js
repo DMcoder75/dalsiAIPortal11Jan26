@@ -88,7 +88,7 @@ export const checkModelAccess = async (modelId, usageCount, subscription) => {
  */
 const getModelEndpoint = (modelId) => {
   // All models use the same API endpoint
-  return `${API_URL}/v1/text/generate`
+  return `${API_URL}/dalsiai/generate`
 }
 
 /**
