@@ -7,6 +7,7 @@ import { X, Mail, Lock, User, Eye, EyeOff } from 'lucide-react'
 import { loginWithJWT, signupWithGmail, loginWithGmail } from '../lib/jwtAuth'
 import { useAuth } from '../contexts/AuthContext'
 import { subscriptionManager } from '../lib/subscriptionManager'
+import { updateTrackerTier } from '../lib/rateLimitService'
 import logo from '../assets/DalSiAILogo2.png'
 
 export default function AuthModal({ isOpen, onClose, onSuccess }) {
@@ -131,7 +132,8 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
           password: formData.password,
           first_name: formData.firstName,
           last_name: formData.lastName,
-          company_name: formData.companyName || null
+          company_name: formData.companyName || null,
+          guest_api_key: localStorage.getItem('api_key') || null  // Include for migration
         })
       })
 
@@ -151,6 +153,11 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
       // Store JWT token and user info
       localStorage.setItem('jwt_token', data.token)
       localStorage.setItem('user_info', JSON.stringify(data.user))
+      localStorage.setItem('user_type', 'registered')
+
+      // Clear guest data after successful migration
+      localStorage.removeItem('api_key')
+      localStorage.removeItem('guest_user_id')
 
       // Create initial free tier subscription for new user
       console.log('🎁 [AUTH_MODAL] Creating initial free subscription...')
@@ -162,8 +169,27 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
         // Don't fail signup if subscription creation fails
       }
 
+      // Initialize rate limit tracker for new user
+      console.log('📊 [AUTH_MODAL] Initializing rate limit tracker...')
+      try {
+        updateTrackerTier(data.user.subscription_tier || 'free')
+        console.log('✅ [AUTH_MODAL] Rate limit tracker initialized')
+      } catch (rateLimitError) {
+        console.error('⚠️ [AUTH_MODAL] Error initializing rate limits:', rateLimitError)
+        // Don't fail signup if rate limit init fails
+      }
+
+      // Show migration message if applicable
+      let successMsg = 'Account created successfully! Check your email to verify your account.'
+      if (data.migration && data.migration.conversations_migrated > 0) {
+        successMsg = `${data.migration.message} Also check your email to verify your account.`
+        console.log('✅ [AUTH_MODAL] Guest conversations migrated:', data.migration.conversations_migrated)
+      }
+      
+      successMsg += ' Redirecting...'
+
       // Show success message
-      setSuccessMessage('Account created successfully! Redirecting...')
+      setSuccessMessage(successMsg)
       
       if (onSuccess) onSuccess()
       onClose()

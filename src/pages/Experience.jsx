@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import logger from '../lib/logger'
+import { getAuthStatus, getApiKeyForRequest } from '../lib/authService'
+import { smartGenerate, generateAIResponse } from '../lib/aiGenerationService'
+import { checkRateLimit, recordRequest, getUsageStats, updateTrackerTier } from '../lib/rateLimitService'
 import {
   Send, Plus, Menu, Settings, Bell, LogOut, Search, Trash2, Heart, Share2,
   Paperclip, Mic, Globe, Play, Image as ImageIcon, Download, Copy, ThumbsUp,
@@ -10,6 +13,7 @@ import {
   Archive, MoreVertical, Edit3, StopCircle, Upload, DollarSign, ChevronLeft
 } from 'lucide-react'
 import logo from '../assets/DalSiAILogo2.png'
+import { AIModeResponseFormatter } from '../components/AIModeResponseFormatter'
 import { checkFriction, logFrictionAction } from '../services/frictionAPI'
 import { trackFunnelStep } from '../services/analyticsAPI'
 import { logChatApiCall, logGuestApiCall, getClientIp } from '../services/apiLogging'
@@ -66,42 +70,34 @@ export default function Experience() {
     { id: 'slack', name: 'Slack', connected: false, icon: '💬' }
   ]
 
-  // Load chat history, fetch guest limit, and setup API authentication on mount
+  // Load chat history, setup authentication, and initialize rate limits on mount
   useEffect(() => {
-    const initializeAuth = async () => {
+    const initializeApp = async () => {
       try {
-        if (user) {
-          // Authenticated user: fetch their API key
-          console.log('🔐 Setting up authenticated user API key...')
-          const apiKey = await getUserApiKey(user.id)
-          if (apiKey) {
-            dalsiAPI.setApiKey(apiKey.id)
-            console.log('✅ User API key set')
-          }
+        logger.info('🚀 [EXPERIENCE] Initializing application...')
+        
+        // Get current auth status
+        const authStatus = await getAuthStatus()
+        logger.info('🔐 [EXPERIENCE] Auth status:', authStatus.authType)
+        
+        // Update rate limit tracker based on user tier
+        if (authStatus.isAuthenticated && authStatus.user) {
+          const tier = authStatus.user.subscription_tier || 'free'
+          updateTrackerTier(tier)
+          logger.info('📊 [EXPERIENCE] Rate limit tier updated to:', tier)
         } else {
-          // Guest user: fetch guest users API key
-          console.log('👤 Setting up guest user API key...')
-          const guestUserId = await getGuestUserId()
-          if (guestUserId) {
-            const guestApiKey = await getUserApiKey(guestUserId)
-            if (guestApiKey) {
-              console.log('📋 Full Guest API Key Object:', guestApiKey)
-              console.log('🔑 Guest API Key ID:', guestApiKey.id)
-              console.log('📝 Guest API Key Name:', guestApiKey.name)
-              console.log('🏷️ Guest API Key Prefix:', guestApiKey.key_prefix)
-              console.log('🔐 Guest API Key Hash:', guestApiKey.key_hash)
-              dalsiAPI.setApiKey(guestApiKey.id)
-              console.log('✅ Guest API key set')
-            }
-          }
+          updateTrackerTier('free')
+          logger.info('📊 [EXPERIENCE] Rate limit tier set to: free (guest)')
         }
+        
+        logger.info('✅ [EXPERIENCE] App initialization complete')
       } catch (error) {
-        console.error('❌ Error setting up API authentication:', error)
+        logger.error('❌ [EXPERIENCE] Error initializing app:', error)
       }
     }
     
     loadChatHistory()
-    initializeAuth()
+    initializeApp()
     
     if (!user) {
       // Fetch guest limit from database
@@ -192,7 +188,21 @@ export default function Experience() {
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return
 
-    // Check guest limit
+    // Check rate limits
+    const rateLimitCheck = checkRateLimit()
+    if (!rateLimitCheck.allowed) {
+      logger.warn('⚠️ [EXPERIENCE] Rate limit exceeded:', rateLimitCheck.reason)
+      const errorMessage = {
+        id: `msg-${Date.now()}-error`,
+        role: 'assistant',
+        content: `⚠️ Rate limit: ${rateLimitCheck.reason}`,
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, errorMessage])
+      return
+    }
+
+    // Check guest limit (legacy)
     if (!user) {
       if (!canGuestSendMessage(guestMessageCount, guestLimit)) {
         logFrictionAction('paywall_shown', 'guest_message_limit')
@@ -218,13 +228,64 @@ export default function Experience() {
       // Track funnel step
       trackFunnelStep('message_sent', { model: selectedModel })
 
-      // Get AI response
-      const response = await dalsiAPI.generateText(selectedModel, inputValue)
+      logger.info('🚀 [EXPERIENCE] Sending message with model:', selectedModel)
+
+      // Use new AI generation service with auto-detection
+      let response
+      try {
+        response = await smartGenerate(inputValue, {
+          mode: 'chat',
+          use_history: true,
+          session_id: currentChat?.id || null,
+          autoDetect: true
+        })
+      } catch (apiError) {
+        logger.error('❌ [EXPERIENCE] API error:', apiError)
+        throw apiError
+      }
+
+      // Record successful request for rate limiting
+      recordRequest()
+      logger.info('✅ [EXPERIENCE] Request recorded for rate limiting')
+
+      // Extract response data based on response structure
+      let responseContent = ''
+      let responseReferences = []
+      let responseFollowups = []
+      let responseMode = 'chat'
+
+      logger.info('📊 [EXPERIENCE] Full API response:', response)
+
+      if (response.data) {
+        // Extract references from multiple possible locations
+        responseReferences = response.data.references || response.data.sources || response.data.links || []
+        
+        // Extract followup questions from multiple possible locations
+        responseFollowups = response.data.followup_questions || response.data.follow_up_questions || response.data.followups || []
+        
+        logger.info('📚 [EXPERIENCE] Extracted references:', responseReferences)
+        logger.info('💡 [EXPERIENCE] Extracted followups:', responseFollowups)
+
+        if (response.data.debate) {
+          responseMode = 'debate'
+          responseContent = response.data.debate
+        } else if (response.data.structured_data) {
+          responseMode = 'project'
+          responseContent = response.data
+        } else {
+          responseContent = response.data.response || response.data
+        }
+      } else {
+        responseContent = response
+      }
 
       const assistantMessage = {
         id: `msg-${Date.now()}-response`,
         role: 'assistant',
-        content: response.message || response,
+        content: responseContent,
+        mode: responseMode,
+        references: responseReferences,
+        followups: responseFollowups,
         timestamp: new Date()
       }
 
@@ -233,9 +294,9 @@ export default function Experience() {
 
       // Log API call
       if (user) {
-        logChatApiCall(user.id, selectedModel, inputValue, response.message || response)
+        logChatApiCall(user.id, selectedModel, inputValue, JSON.stringify(responseContent))
       } else {
-        logGuestApiCall('guest', selectedModel, inputValue, response.message || response)
+        logGuestApiCall('guest', selectedModel, inputValue, JSON.stringify(responseContent))
       }
 
       // Save to database if user is logged in
@@ -249,16 +310,16 @@ export default function Experience() {
           {
             chat_id: currentChat.id,
             role: 'assistant',
-            content: cleanTextForDB(response.message || response)
+            content: cleanTextForDB(JSON.stringify(responseContent))
           }
         ])
       }
     } catch (error) {
-      logger.error('Error sending message:', error)
+      logger.error('❌ [EXPERIENCE] Error sending message:', error)
       const errorMessage = {
         id: `msg-${Date.now()}-error`,
         role: 'assistant',
-        content: 'Sorry, there was an error processing your message. Please try again.',
+        content: error.message || 'Sorry, there was an error processing your message. Please try again.',
         timestamp: new Date()
       }
       setMessages(prev => [...prev, errorMessage])
@@ -496,13 +557,33 @@ export default function Experience() {
                   className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-xl px-6 py-4 rounded-lg ${
+                    className={`max-w-2xl px-6 py-4 rounded-lg ${
                       msg.role === 'user'
                         ? 'bg-primary text-primary-foreground shadow-lg'
                         : 'bg-card border border-border'
                     }`}
                   >
-                    <p className="text-sm leading-relaxed">{msg.content}</p>
+                    {msg.role === 'user' ? (
+                      <p className="text-sm leading-relaxed">{msg.content}</p>
+                    ) : (
+                      <AIModeResponseFormatter
+                        mode={msg.mode || 'chat'}
+                        response={msg.content}
+                        references={msg.references}
+                        followups={msg.followups}
+                        onFollowupClick={(followupQuestion) => {
+                          logger.info('🔗 [EXPERIENCE] Followup clicked:', followupQuestion)
+                          setInputValue(followupQuestion)
+                          // Auto-send the followup question
+                          setTimeout(() => {
+                            setInputValue(followupQuestion)
+                            // Trigger send by simulating the handleSendMessage
+                            const event = new Event('followup-send')
+                            window.dispatchEvent(event)
+                          }, 100)
+                        }}
+                      />
+                    )}
                   </div>
                 </div>
               ))}
