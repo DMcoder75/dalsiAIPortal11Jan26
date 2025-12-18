@@ -34,7 +34,11 @@ export const ChatModeResponse = ({ response, references, followups, onFollowupCl
 
       {/* Main Response */}
       <div className="prose prose-sm max-w-none dark:prose-invert">
-        <p className="whitespace-pre-wrap text-foreground text-sm leading-relaxed">{response}</p>
+        {typeof response === 'string' && response.includes('<') && response.includes('>') ? (
+          <div dangerouslySetInnerHTML={{ __html: response }} className="text-sm leading-relaxed" />
+        ) : (
+          <p className="whitespace-pre-wrap text-foreground text-sm leading-relaxed">{response}</p>
+        )}
       </div>
 
       {/* References Section */}

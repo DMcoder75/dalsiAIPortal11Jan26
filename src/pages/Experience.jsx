@@ -42,6 +42,7 @@ import {
   saveMessage,
   generateConversationTitle
 } from '../lib/conversationService'
+import { getFormattedImplementationResponse } from '../lib/testFormattedResponse'
 
 export default function Experience() {
   const { user, logout } = useAuth()
@@ -196,6 +197,28 @@ export default function Experience() {
 
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return
+
+    // TEST: Show formatted response on special command
+    if (inputValue.toLowerCase() === '/test-formatted') {
+      const userMessage = {
+        id: `msg-${Date.now()}`,
+        role: 'user',
+        content: inputValue,
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, userMessage])
+      setInputValue('')
+      const formattedResponse = {
+        id: `msg-${Date.now()}-formatted`,
+        role: 'assistant',
+        content: getFormattedImplementationResponse(),
+        timestamp: new Date()
+      }
+      setTimeout(() => {
+        setMessages(prev => [...prev, formattedResponse])
+      }, 500)
+      return
+    }
 
     // Check rate limits
     const rateLimitCheck = checkRateLimit()
