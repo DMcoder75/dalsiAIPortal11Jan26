@@ -379,8 +379,20 @@ export const smartGenerate = async (message, options = {}) => {
       logger.info(`🔒 [AI_SERVICE] Using forced endpoint: ${forceEndpoint}`)
     } else if (autoDetect) {
       const detectedType = detectQueryType(message)
-      // Get or lock the endpoint for this conversation
-      queryType = getConversationEndpoint(session_id, detectedType)
+      
+      // Default to general, only switch if specific keywords detected
+      if (detectedType !== 'general') {
+        queryType = detectedType
+        logger.info(`🔍 [AI_SERVICE] Detected specialized endpoint: ${detectedType}`)
+      } else {
+        queryType = 'general'
+        logger.info(`🔍 [AI_SERVICE] No specialized keywords found, using general endpoint`)
+      }
+      
+      // Lock the endpoint for this conversation
+      if (session_id) {
+        getConversationEndpoint(session_id, queryType)
+      }
     }
 
     logger.info(`🧠 [AI_SERVICE] Smart generate using ${queryType} endpoint`)
