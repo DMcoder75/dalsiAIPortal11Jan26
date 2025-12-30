@@ -65,6 +65,7 @@ export default function Experience() {
   const [loadingConversations, setLoadingConversations] = useState(false)
   const [conversationEndpoint, setConversationEndpoint] = useState(null) // Track locked endpoint
   const [conversationChatIds, setConversationChatIds] = useState({}) // Track chat_id per conversation
+  const [currentSessionId, setCurrentSessionId] = useState(null) // Persistent session ID for conversation
   const messagesEndRef = useRef(null)
 
   const models = [
@@ -281,10 +282,12 @@ export default function Experience() {
 
       logger.info('🚀 [EXPERIENCE] Sending message with model:', selectedModel)
 
-      // Ensure we have a session ID
-      let sessionId = currentChat?.id
+      // Ensure we have a persistent session ID for this conversation
+      let sessionId = currentSessionId || currentChat?.id
       if (!sessionId) {
         sessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        setCurrentSessionId(sessionId)
+        logger.info('🆔 [EXPERIENCE] Created new session ID:', sessionId)
       }
 
       // Detect continuation and get stored chat_id
