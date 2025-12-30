@@ -16,10 +16,10 @@ export function parseInlineMarkdown(text) {
   // Order matters: links, bold, italic, strikethrough, inline code
   const patterns = [
     { regex: /\[([^\]]+)\]\(([^)]+)\)/g, type: 'link' },      // [text](url)
-    { regex: /\*\*([^*]+)\*\*/g, type: 'bold' },              // **bold**
-    { regex: /\*([^*]+)\*/g, type: 'italic' },                // *italic*
-    { regex: /~~([^~]+)~~/g, type: 'strikethrough' },         // ~~strikethrough~~
-    { regex: /`([^`]+)`/g, type: 'code' }                     // `code`
+    { regex: /\*\*([^*]+?)\*\*/g, type: 'bold' },              // **bold** (non-greedy)
+    { regex: /(?<!\*)\*(?!\*)([^*]+?)(?<!\*)\*(?!\*)/g, type: 'italic' },  // *italic* (not preceded/followed by *)
+    { regex: /~~([^~]+?)~~/g, type: 'strikethrough' },         // ~~strikethrough~~ (non-greedy)
+    { regex: /`([^`]+?)`/g, type: 'code' }                     // `code` (non-greedy)
   ]
 
   // Find all matches with their positions
