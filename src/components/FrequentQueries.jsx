@@ -114,10 +114,7 @@ export const FrequentQueries = ({ onQuerySelect }) => {
         ))}
       </div>
 
-      {/* Refresh Info */}
-      <p className="text-xs text-purple-400/50 mt-3 px-1">
-        Updated regularly based on popular queries
-      </p>
+
     </div>
   )
 }
