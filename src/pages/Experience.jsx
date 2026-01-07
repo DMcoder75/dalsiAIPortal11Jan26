@@ -46,6 +46,7 @@ import ImplementationSummaryResponse from '../components/ImplementationSummaryRe
 import { callAIWithIntelligentContinuation, getChatIdForConversation, clearConversationChatId } from '../lib/intelligentApiCaller'
 import { saveMessageWithMetadata } from '../lib/chatManagementService'
 import { detectContinuation, referencesContext } from '../lib/continuationDetector'
+import FrequentQueries from '../components/FrequentQueries'
 
 export default function Experience() {
   const { user, logout } = useAuth()
@@ -483,6 +484,18 @@ export default function Experience() {
             }}
             onDeleteConversation={handleDeleteChat}
             isLoading={loadingConversations}
+          />
+          
+          {/* Frequent Queries Section */}
+          <FrequentQueries 
+            onQuerySelect={(query) => {
+              setInputValue(query)
+              // Auto-focus input for better UX
+              setTimeout(() => {
+                const inputElement = document.querySelector('textarea[placeholder*="Ask"]')
+                if (inputElement) inputElement.focus()
+              }, 100)
+            }}
           />
         </div>
 
