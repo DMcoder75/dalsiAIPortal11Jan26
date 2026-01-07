@@ -47,6 +47,10 @@ import { callAIWithIntelligentContinuation, getChatIdForConversation, clearConve
 import { saveMessageWithMetadata } from '../lib/chatManagementService'
 import { detectContinuation, referencesContext } from '../lib/continuationDetector'
 import FrequentQueries from '../components/FrequentQueries'
+import EmailWriterModal from '../components/EmailWriterModal'
+import SummaryModal from '../components/SummaryModal'
+import TranslatorModal from '../components/TranslatorModal'
+import TutorModal from '../components/TutorModal'
 
 export default function Experience() {
   const { user, logout } = useAuth()
@@ -69,6 +73,10 @@ export default function Experience() {
   const [currentSessionId, setCurrentSessionId] = useState(null) // Persistent session ID for conversation
   const conversationChatIdsRef = useRef({}) // Track chat_id per conversation (using ref for immediate access)
   const messagesEndRef = useRef(null)
+  const [showEmailWriterModal, setShowEmailWriterModal] = useState(false)
+  const [showSummaryModal, setShowSummaryModal] = useState(false)
+  const [showTranslatorModal, setShowTranslatorModal] = useState(false)
+  const [showTutorModal, setShowTutorModal] = useState(false)
 
   const models = [
     { id: 'general', name: 'DalSiAI Chat', description: 'General AI Assistant' },
@@ -767,6 +775,12 @@ export default function Experience() {
               {templates.map(template => (
                 <button
                   key={template.id}
+                  onClick={() => {
+                    if (template.id === 'email') setShowEmailWriterModal(true)
+                    if (template.id === 'summary') setShowSummaryModal(true)
+                    if (template.id === 'translator') setShowTranslatorModal(true)
+                    if (template.id === 'tutor') setShowTutorModal(true)
+                  }}
                   className="w-full p-4 bg-card hover:bg-card/80 rounded-lg text-left transition-colors group border border-border hover:border-primary/50"
                 >
                   <div className="flex items-start gap-3">
@@ -819,6 +833,34 @@ export default function Experience() {
       <AuthModal 
         isOpen={showAuthModal} 
         onClose={() => setShowAuthModal(false)}
+      />
+
+      {/* Email Writer Modal */}
+      <EmailWriterModal
+        isOpen={showEmailWriterModal}
+        onClose={() => setShowEmailWriterModal(false)}
+        user={user}
+      />
+
+      {/* Summary Modal */}
+      <SummaryModal
+        isOpen={showSummaryModal}
+        onClose={() => setShowSummaryModal(false)}
+        user={user}
+      />
+
+      {/* Translator Modal */}
+      <TranslatorModal
+        isOpen={showTranslatorModal}
+        onClose={() => setShowTranslatorModal(false)}
+        user={user}
+      />
+
+      {/* Tutor Modal */}
+      <TutorModal
+        isOpen={showTutorModal}
+        onClose={() => setShowTutorModal(false)}
+        user={user}
       />
     </div>
   )
