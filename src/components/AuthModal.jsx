@@ -270,15 +270,13 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
 
   const handleGmailLogin = async () => {
     console.log('📧 [AUTH_MODAL] handleGmailLogin started')
-    setIsProcessingGoogle(true)
+    setIsProcessingGoogle(false) // Don't process yet, just show disclosure
     setError('')
     
     try {
-      // For login, we don't have email yet, so we go directly to Gmail
-      // The backend will check if user exists and handle accordingly
-      setIsNewGoogleUser(false) // Assume existing user for login flow
-      setShowGoogleDisclosure(false) // Skip disclosure for login
-      await loginWithGmail()
+      // Show disclosure modal for login too
+      setIsNewGoogleUser(false) // Mark as login flow (existing user)
+      setShowGoogleDisclosure(true) // Show disclosure modal
     } catch (error) {
       console.error('❌ [AUTH_MODAL] Error in Gmail login:', error)
       setError('Failed to initiate Gmail login')
@@ -287,7 +285,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
   }
 
   const handleGoogleLoginContinue = async () => {
-    console.log('🔐 [AUTH_MODAL] User accepted disclosure, redirecting to Gmail...')
+    console.log('🔐 [AUTH_MODAL] User accepted disclosure, redirecting to Gmail for login...')
     setIsProcessingGoogle(true)
     try {
       await loginWithGmail()
@@ -472,18 +470,16 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
         </CardContent>
       </Card>
 
-      {/* Google Data Disclosure Modal - Only for new users */}
-      {isNewGoogleUser && (
-        <GoogleDataDisclosure
-          isOpen={showGoogleDisclosure}
-          onClose={() => {
-            setShowGoogleDisclosure(false)
-            setIsProcessingGoogle(false)
-          }}
-          onContinue={handleGoogleDisclosureContinue}
-          isLoading={isProcessingGoogle}
-        />
-      )}
+      {/* Google Data Disclosure Modal - For both login and signup */}
+      <GoogleDataDisclosure
+        isOpen={showGoogleDisclosure}
+        onClose={() => {
+          setShowGoogleDisclosure(false)
+          setIsProcessingGoogle(false)
+        }}
+        onContinue={isNewGoogleUser ? handleGoogleDisclosureContinue : handleGoogleLoginContinue}
+        isLoading={isProcessingGoogle}
+      />
 
       {/* Google Profile Setup Modal */}
       <GoogleProfileSetup
