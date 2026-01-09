@@ -13,6 +13,7 @@ import SitemapPage from './SitemapPage'
 import ProfilePage from './ProfilePage'
 import AuthModal from './AuthModal'
 import Billing from '../pages/Billing'
+import GmailCallback from '../pages/GmailCallback'
 import { useAuth } from '../contexts/AuthContext'
 
 // Model Overview Pages
@@ -71,6 +72,9 @@ export default function Router() {
 
   const renderPage = () => {
     switch (currentPath) {
+      case '/auth/gmail/callback':
+        return <GmailCallback />
+      
       case '/chat':
       case '/experience':
         return <Experience />
