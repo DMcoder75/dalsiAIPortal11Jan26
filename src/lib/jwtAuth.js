@@ -485,9 +485,9 @@ export const handleGmailCallback = async (code, state) => {
       throw new Error('Missing authorization code or state parameter');
     }
 
-    // Get guest_user_id from localStorage for migration
-    const guestUserId = localStorage.getItem('guest_user_id');
-    console.log('📝 Guest User ID:', guestUserId ? 'present' : 'not present');
+    // Get guest_session_id from localStorage for migration
+    const guestUserId = localStorage.getItem('guest_session_id');
+    console.log('📝 Guest Session ID:', guestUserId ? 'present' : 'not present');
 
     // Exchange authorization code for JWT token
     console.log('🔄 Exchanging code for JWT token...');
