@@ -35,6 +35,11 @@ export const getGuestApiKey = async () => {
     // Generate session ID for browser fingerprinting
     const sessionId = generateSessionId()
     logger.debug('📍 [AUTH_SERVICE] Generated session ID:', sessionId)
+    
+    // Store session ID in sessionStorage BEFORE sending to backend
+    // This ensures we have it for OAuth callback later
+    sessionStorage.setItem('dalsi_guest_session_id', sessionId)
+    logger.debug('📑 [AUTH_SERVICE] Stored session ID in sessionStorage:', sessionId)
 
     // Call guest key endpoint
     const response = await fetch(`${API_BASE_URL}/api/auth/guest-key`, {

@@ -975,13 +975,13 @@ const EnhancedChatInterface = () => {
  }
 
  const initializeGuestUser = async () => {
-  // Get the session ID from authService (the one sent to backend)
-  let sessionId = sessionStorage.getItem('dalsi_guest_user_id')
+  // Get the session ID that was stored by authService
+  let sessionId = sessionStorage.getItem('dalsi_guest_session_id')
   
   if (!sessionId) {
     // Fallback: generate one matching authService format
     sessionId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
-    sessionStorage.setItem('dalsi_guest_user_id', sessionId)
+    sessionStorage.setItem('dalsi_guest_session_id', sessionId)
     console.log('✨ New guest session created:', sessionId)
   }
   
