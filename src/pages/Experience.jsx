@@ -55,6 +55,7 @@ import EditConversationModal from '../components/EditConversationModal'
 import { updateConversationTitle, generateConversationTitle as generateTitle } from '../lib/conversationServiceEnhanced'
 import { generateTitleFromMessage } from '../lib/guestConversationService'
 import { deleteConversationWithCascade } from '../lib/deleteConversationService'
+import { fetchConversations, fetchConversationMessages, deleteConversationAPI, invalidateConversationsCache, invalidateMessagesCache } from '../lib/chatAPI'
 
 export default function Experience() {
   const { user, logout } = useAuth()
@@ -190,12 +191,13 @@ export default function Experience() {
           logger.warn('No session found for loading conversations')
           return
         }
-        const conversations = await getUserConversations(user.id, session.access_token)
-        logger.info('Loaded conversations:', conversations.length)
+        // Use new API endpoint with caching
+        const conversations = await fetchConversations(session.access_token)
+        logger.info('✅ [EXPERIENCE] Loaded conversations:', conversations.length)
         setChatHistory(conversations || [])
       }
     } catch (error) {
-      logger.error('Error loading chat history:', error)
+      logger.error('❌ [EXPERIENCE] Error loading chat history:', error)
       setChatHistory([])
     } finally {
       setLoadingConversations(false)
@@ -470,16 +472,21 @@ export default function Experience() {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
-      const result = await deleteConversationWithCascade(chatId, session.access_token)
+      // Use new API endpoint for deletion
+      const result = await deleteConversationAPI(chatId, session.access_token)
       if (result.success) {
+        // Invalidate cache
+        invalidateConversationsCache()
+        invalidateMessagesCache(chatId)
         await loadChatHistory()
         if (currentChat?.id === chatId) {
           setCurrentChat(null)
           setMessages([])
         }
+        logger.info('✅ [EXPERIENCE] Conversation deleted:', chatId)
       }
     } catch (error) {
-      logger.error('Error deleting chat:', error)
+      logger.error('❌ [EXPERIENCE] Error deleting chat:', error)
     }
   }
 
@@ -518,7 +525,8 @@ export default function Experience() {
         if (user) {
           const { data: { session } } = await supabase.auth.getSession()
           if (session) {
-            const conversationMessages = await getConversationMessages(id, session.access_token)
+            // Use new API endpoint with caching
+            const conversationMessages = await fetchConversationMessages(id, session.access_token)
             const formattedMessages = conversationMessages.map(msg => ({
               id: msg.id,
               role: msg.role,
@@ -526,11 +534,11 @@ export default function Experience() {
               timestamp: new Date(msg.created_at)
             }))
             setMessages(formattedMessages)
-            logger.info('Loaded conversation messages:', formattedMessages.length)
+            logger.info('✅ [EXPERIENCE] Loaded conversation messages:', formattedMessages.length)
           }
         }
       } catch (error) {
-        logger.error('Error loading conversation messages:', error)
+        logger.error('❌ [EXPERIENCE] Error loading conversation messages:', error)
       } finally {
         setLoading(false)
       }
