@@ -186,13 +186,14 @@ export default function Experience() {
     try {
       if (user) {
         setLoadingConversations(true)
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session) {
-          logger.warn('No session found for loading conversations')
+        // Get JWT token from localStorage (user is authenticated via JWT, not Supabase)
+        const jwtToken = localStorage.getItem('jwt_token')
+        if (!jwtToken) {
+          logger.warn('No JWT token found for loading conversations')
           return
         }
         // Use new API endpoint with caching
-        const conversations = await fetchConversations(session.access_token)
+        const conversations = await fetchConversations(jwtToken)
         logger.info('✅ [EXPERIENCE] Loaded conversations:', conversations.length)
         setChatHistory(conversations || [])
       }
@@ -523,10 +524,11 @@ export default function Experience() {
       setLoading(true)
       try {
         if (user) {
-          const { data: { session } } = await supabase.auth.getSession()
-          if (session) {
+          // Get JWT token from localStorage
+          const jwtToken = localStorage.getItem('jwt_token')
+          if (jwtToken) {
             // Use new API endpoint with caching
-            const conversationMessages = await fetchConversationMessages(id, session.access_token)
+            const conversationMessages = await fetchConversationMessages(id, jwtToken)
             const formattedMessages = conversationMessages.map(msg => ({
               id: msg.id,
               role: msg.role,
