@@ -486,7 +486,18 @@ export default function Experience() {
       // Refresh conversations list to show newly created chat
       if (user && !currentChat) {
         logger.info('🔄 [EXPERIENCE] Refreshing conversations list after new chat creation')
-        await loadUserConversations()
+        await loadChatHistory()
+        
+        // Set the newly created chat as active (it should be the first/newest one)
+        const jwtToken = localStorage.getItem('jwt_token')
+        if (jwtToken) {
+          const updatedConversations = await fetchConversations(jwtToken)
+          if (updatedConversations && updatedConversations.length > 0) {
+            const newestChat = updatedConversations[0]
+            setCurrentChat(newestChat)
+            logger.info('✅ [EXPERIENCE] Set newly created chat as active:', newestChat.id)
+          }
+        }
       }
     } catch (error) {
       logger.error('❌ [EXPERIENCE] Error sending message:', error)
