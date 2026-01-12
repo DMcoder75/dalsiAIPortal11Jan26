@@ -14,17 +14,18 @@
  */
 export const getGuestUserId = () => {
   try {
-    const guestUserId = sessionStorage.getItem('dalsi_guest_user_id')
+    // Check localStorage first (where it's stored by authService)
+    const guestUserId = localStorage.getItem('dalsi_guest_user_id')
     
     if (guestUserId) {
-      console.log('✅ Guest user ID retrieved from session:', guestUserId)
+      console.log('✅ Guest user ID retrieved from storage:', guestUserId)
       return guestUserId
     } else {
-      console.warn('⚠️ Guest user ID not found in session. Guest session may not be initialized.')
+      console.warn('⚠️ Guest user ID not found in storage. Guest session may not be initialized.')
       return null
     }
   } catch (error) {
-    console.error('❌ Error getting guest user ID from session:', error)
+    console.error('❌ Error getting guest user ID from storage:', error)
     return null
   }
 }
